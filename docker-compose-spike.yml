@@ -1,0 +1,44 @@
+# Pig 开源版 Phase 0 单机验证环境（不改动上游 pig 仓库里的原文件）
+# mysql / redis 用官方镜像，服务名与 pig-boot/application-dev.yml 保持一致
+services:
+  pig-mysql:
+    image: mysql:8.0.32
+    container_name: pig-spike-mysql
+    command: --lower_case_table_names=1 --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_HOST: "%"
+      TZ: Asia/Shanghai
+    volumes:
+      - ./pig/db:/docker-entrypoint-initdb.d:ro
+      - pig_mysql_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    networks:
+      - pig_spike_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+
+  pig-redis:
+    image: redis:7-alpine
+    container_name: pig-spike-redis
+    ports:
+      - "6380:6379"
+    networks:
+      - pig_spike_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+networks:
+  pig_spike_net:
+    name: pig_spike_net
+    driver: bridge
+
+volumes:
+  pig_mysql_data:

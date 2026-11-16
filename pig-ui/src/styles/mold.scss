@@ -1,0 +1,897 @@
+/* =============================================================================
+ * 模具业务应用级样式（M3）
+ * 边界：只在本文件覆盖 Pig 默认样式，不改 src/theme/*。
+ * 依据：coordination/pig/design/pig-design-spec-20261112.md
+ * ========================================================================== */
+
+:root {
+	/* 业务缺口令牌（规范 1.1：只补框架没有的） */
+	--mold-space-1: 4px;
+	--mold-space-2: 8px;
+	--mold-space-3: 12px;
+	--mold-space-4: 16px;
+	--mold-space-5: 24px;
+	--mold-space-6: 32px;
+	--mold-radius-card: 8px;
+	--mold-font-stat: 28px;
+	--mold-color-link: #2b6cb0;
+	--mold-touch: 44px;
+	/* 表格密度：紧凑 9 / 标准 13 / 宽松 17（规范 1.5） */
+	--mold-row-pad-y: 13px;
+}
+
+/* 输入/选择器圆角与按钮统一为 6（规范 1.4） */
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+	border-radius: var(--border-radius-md);
+}
+
+/* 键盘焦点环：2px 主色 + 2px offset（规范 3.6 / G-14）
+   用 !important 覆盖 Element Plus 与 Pig 的 `outline: none`（实测按钮 focus-visible 无环） */
+:focus-visible,
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role='button']:focus-visible,
+.el-button:focus-visible {
+	outline: 2px solid var(--el-color-primary) !important;
+	outline-offset: 2px !important;
+	/* EP 给按钮加了 outline 过渡，Tab 瞬间会从 UA 环渐变过来（实测 3px 灰）；
+	   焦点环应即时出现，不做动画 */
+	transition: none !important;
+}
+
+/* 跳到主内容（G-13 首个 Tab） */
+.mold-skip-link {
+	position: fixed;
+	left: 8px;
+	top: -64px;
+	z-index: 4000;
+	padding: 10px 16px;
+	min-height: var(--mold-touch);
+	display: inline-flex;
+	align-items: center;
+	background: var(--el-bg-color);
+	color: var(--mold-color-link);
+	border: 1px solid var(--el-color-primary);
+	border-radius: var(--mold-radius-card);
+	box-shadow: var(--shadow-sm);
+	transition: top 0.15s ease;
+	&:focus {
+		top: 8px;
+	}
+}
+
+/* -----------------------------------------------------------------------------
+ * 页面滚动容器（规范 6.1 第 1 条；Pig 壳固定视口，每页自己管滚动）
+ * -------------------------------------------------------------------------- */
+.page-scroll {
+	height: 100%;
+	overflow-y: auto;
+	overflow-x: hidden;
+	-webkit-overflow-scrolling: touch;
+	padding-bottom: calc(12px + env(safe-area-inset-bottom));
+	box-sizing: border-box;
+}
+
+/* 列表页通用 */
+.mold-page {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.mold-page-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: var(--mold-space-3);
+	margin-bottom: var(--mold-space-4);
+	h1 {
+		margin: 0;
+		font-size: var(--el-font-size-extra-large);
+		line-height: 28px;
+		font-weight: 600;
+		color: var(--el-text-color-primary);
+	}
+	p {
+		margin: 4px 0 0;
+		font-size: var(--el-font-size-extra-small);
+		line-height: 18px;
+		color: var(--el-text-color-secondary);
+	}
+}
+
+.mold-page-head-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--mold-space-2);
+	flex-shrink: 0;
+}
+
+/* 标题栏总数（P1-05：共 N 条 = 服务端 total，不是本页行数） */
+.mold-page-total {
+	display: inline-block;
+	margin-left: 8px;
+	padding: 0 8px;
+	border-radius: 999px;
+	background: var(--el-fill-color-light);
+	color: var(--el-text-color-regular);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+/* 数据源提示条（mock 时必须可见，不允许把示例数据当真实数据） */
+.mold-notice {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--mold-space-2);
+	padding: 8px 12px;
+	margin-bottom: var(--mold-space-4);
+	font-size: var(--el-font-size-extra-small);
+	line-height: 18px;
+	color: var(--el-color-warning-dark-2);
+	background: var(--el-color-warning-light-9);
+	border: 1px solid var(--el-color-warning-light-7);
+	border-radius: var(--border-radius-sm);
+}
+
+/* 统计卡 */
+.mold-stat {
+	background: var(--el-bg-color);
+	border: 1px solid var(--el-border-color-light);
+	border-radius: var(--mold-radius-card);
+	padding: 14px 16px;
+	margin-bottom: var(--mold-space-2);
+	min-height: 88px;
+	box-sizing: border-box;
+}
+.mold-stat-label {
+	font-size: var(--el-font-size-small);
+	line-height: 20px;
+	color: var(--el-text-color-secondary);
+}
+.mold-stat-value {
+	font-size: var(--mold-font-stat);
+	line-height: 36px;
+	font-weight: 600;
+	margin: 4px 0 2px;
+	font-variant-numeric: tabular-nums;
+	color: var(--el-text-color-primary);
+	&.is-ok {
+		color: var(--el-color-success);
+	}
+	&.is-bad {
+		color: var(--el-color-danger);
+	}
+}
+.mold-stat-unit {
+	font-size: var(--el-font-size-small);
+	font-weight: 400;
+	margin-left: 4px;
+	color: var(--el-text-color-secondary);
+}
+.mold-stat-foot {
+	font-size: var(--el-font-size-extra-small);
+	line-height: 18px;
+	color: var(--el-text-color-placeholder);
+}
+
+/* 筛选条 */
+.mold-filter-bar {
+	margin-bottom: var(--mold-space-4);
+	.el-form-item {
+		margin-bottom: 12px;
+	}
+}
+
+/* 工具栏 */
+.mold-toolbar {
+	display: flex;
+	align-items: center;
+	gap: var(--mold-space-2);
+	flex-wrap: wrap;
+	margin-bottom: var(--mold-space-2);
+}
+.mold-toolbar-right {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: var(--mold-space-2);
+}
+.mold-mobile-filter-btn {
+	display: none;
+}
+
+/* 表格密度（规范 1.5） */
+.mold-list {
+	.el-table {
+		--el-table-header-text-color: var(--el-text-color-regular);
+	}
+	th.el-table__cell {
+		font-size: var(--el-font-size-small);
+		line-height: 20px;
+		font-weight: 600;
+		height: 44px;
+		padding: 0;
+	}
+	td.el-table__cell {
+		padding-top: var(--mold-row-pad-y);
+		padding-bottom: var(--mold-row-pad-y);
+	}
+	td.el-table__cell,
+	th.el-table__cell {
+		.cell {
+			padding-left: 12px;
+			padding-right: 12px;
+		}
+	}
+	.col-code,
+	.col-name {
+		.cell {
+			white-space: normal;
+		}
+	}
+	.col-num {
+		text-align: right;
+		.cell {
+			font-variant-numeric: tabular-nums;
+		}
+	}
+	.col-updated .cell {
+		font-size: var(--el-font-size-extra-small);
+		font-variant-numeric: tabular-nums;
+	}
+	.el-tag {
+		white-space: nowrap;
+	}
+	.el-button.is-link {
+		color: var(--mold-color-link);
+	}
+	.col-act {
+		.cell {
+			justify-content: flex-end;
+		}
+	}
+	/* 行可点击预览（P1-10）：鼠标提示 + 键盘焦点环（行内偏移，避免被表体裁掉） */
+	.el-table__body tr.el-table__row {
+		cursor: pointer;
+	}
+	.el-table__body tr.el-table__row:focus-visible {
+		outline: 2px solid var(--el-color-primary) !important;
+		outline-offset: -2px !important;
+	}
+}
+
+/* 单元格标签：桌面隐藏，卡片模式显示（标签来自列定义，不写死 CSS） */
+.cell-label {
+	display: none;
+}
+
+/* 进度单元格 */
+.mold-progress {
+	display: flex;
+	align-items: center;
+	gap: var(--mold-space-2);
+	.el-progress {
+		flex: 1;
+		min-width: 48px;
+	}
+	.mold-progress-text {
+		font-size: var(--el-font-size-extra-small);
+		line-height: 18px;
+		color: var(--el-text-color-secondary);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
+}
+
+/* 交期 */
+.mold-due {
+	display: inline-flex;
+	flex-direction: column;
+	line-height: 18px;
+	.mold-due-note {
+		font-size: var(--el-font-size-extra-small);
+		color: var(--el-text-color-placeholder);
+	}
+	&.is-over {
+		color: var(--el-color-danger);
+		font-weight: 600;
+		.mold-due-note {
+			color: var(--el-color-danger);
+		}
+	}
+}
+
+/* 骨架块（统计卡与列表共用） */
+.mold-skel-block {
+	background: linear-gradient(90deg, var(--el-fill-color-light) 25%, var(--el-fill-color) 37%, var(--el-fill-color-light) 63%);
+	background-size: 400% 100%;
+	animation: mold-skeleton 1.2s ease infinite;
+	border-radius: var(--border-radius-sm);
+}
+
+/* 骨架 */
+.mold-skeleton {
+	.mold-skel-block {
+		background: linear-gradient(90deg, var(--el-fill-color-light) 25%, var(--el-fill-color) 37%, var(--el-fill-color-light) 63%);
+		background-size: 400% 100%;
+		animation: mold-skeleton 1.2s ease infinite;
+		border-radius: var(--border-radius-sm);
+	}
+}
+@keyframes mold-skeleton {
+	0% {
+		background-position: 100% 50%;
+	}
+	100% {
+		background-position: 0 50%;
+	}
+}
+
+/* 四态面板 */
+.mold-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+	min-height: 240px;
+	padding: var(--mold-space-5) var(--mold-space-4);
+	background: var(--el-bg-color);
+	border: 1px solid var(--el-border-color-lighter);
+	border-radius: var(--mold-radius-card);
+	box-sizing: border-box;
+	.mold-state-icon {
+		font-size: 32px;
+		line-height: 1;
+		color: var(--el-text-color-placeholder);
+		margin-bottom: var(--mold-space-3);
+	}
+	.mold-state-title {
+		font-size: var(--el-font-size-large);
+		line-height: 26px;
+		font-weight: 600;
+		color: var(--el-text-color-primary);
+	}
+	.mold-state-desc {
+		max-width: 460px;
+		margin-top: var(--mold-space-2);
+		font-size: var(--el-font-size-small);
+		line-height: 20px;
+		color: var(--el-text-color-secondary);
+	}
+	.mold-state-request {
+		margin-top: var(--mold-space-1);
+		font-size: var(--el-font-size-extra-small);
+		line-height: 18px;
+		color: var(--el-text-color-placeholder);
+		word-break: break-all;
+	}
+	.mold-state-actions {
+		display: flex;
+		gap: var(--mold-space-2);
+		margin-top: var(--mold-space-4);
+	}
+	&.is-forbidden .mold-state-icon {
+		color: var(--el-color-warning);
+	}
+	&.is-error .mold-state-icon {
+		color: var(--el-color-danger);
+	}
+}
+
+/* 分页 */
+.mold-pager {
+	display: flex;
+	align-items: center;
+	margin-top: var(--mold-space-4);
+	.mold-pager-total {
+		font-size: var(--el-font-size-small);
+		color: var(--el-text-color-secondary);
+		margin-right: auto;
+		white-space: nowrap;
+	}
+}
+.mold-pager-mobile {
+	display: none;
+}
+
+/* 抽屉预览 */
+.mold-preview {
+	.mold-preview-head {
+		h2 {
+			margin: 0;
+			font-size: var(--el-font-size-medium);
+			line-height: 24px;
+		}
+		p {
+			margin: 4px 0 0;
+			font-size: var(--el-font-size-extra-small);
+			color: var(--el-text-color-secondary);
+		}
+	}
+	.mold-preview-kv {
+		margin-top: var(--mold-space-4);
+		border-top: 1px solid var(--el-border-color-lighter);
+		> div {
+			display: flex;
+			justify-content: space-between;
+			gap: var(--mold-space-3);
+			padding: 10px 0;
+			border-bottom: 1px solid var(--el-border-color-lighter);
+			font-size: var(--el-font-size-base);
+			line-height: 22px;
+		}
+		dt {
+			color: var(--el-text-color-secondary);
+			flex: 0 0 96px;
+		}
+		dd {
+			margin: 0;
+			text-align: right;
+			overflow-wrap: anywhere;
+		}
+	}
+}
+
+/* -----------------------------------------------------------------------------
+ * ≤900px：390 卡片模式 + 顶部导航
+ * 注意：fixed/border/stripe/tooltip 由页面按断点关闭，这里只负责布局。
+ * -------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+	/* —— 壳：顶部导航 —— */
+	.layout-header {
+		position: sticky;
+		top: 0;
+		z-index: 1000;
+	}
+	.layout-navbars-breadcrumb-index {
+		height: 48px !important;
+	}
+	/* 多页签在 390 隐藏（规范 6 第 14 条） */
+	.layout-navbars-tagsview {
+		display: none !important;
+	}
+	/* 面包屑改为当前页标题（Pig 在 ≤768 默认隐藏，这里恢复并只留最后一级） */
+	.layout-navbars-breadcrumb-hide {
+		display: flex !important;
+		min-width: 0;
+		.el-breadcrumb__item {
+			display: none;
+			min-width: 0;
+		}
+		.el-breadcrumb__item:last-child {
+			display: flex;
+			min-width: 0;
+			max-width: 100%;
+			.el-breadcrumb__inner,
+			.layout-navbars-breadcrumb-span {
+				display: block;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+				font-size: var(--el-font-size-base);
+				line-height: 22px;
+				font-weight: 600;
+			}
+		}
+	}
+	.layout-navbars-breadcrumb-icon {
+		width: var(--mold-touch) !important;
+		height: var(--mold-touch) !important;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.layout-navbars-breadcrumb-actions .el-dropdown,
+	.layout-navbars-breadcrumb-actions .el-avatar {
+		min-width: var(--mold-touch);
+		min-height: var(--mold-touch);
+	}
+	/* 侧栏抽屉：菜单项触控区 ≥44 */
+	.layout-aside-mobile .el-menu-item,
+	.layout-aside-mobile .el-sub-menu__title {
+		height: var(--mold-touch);
+		line-height: var(--mold-touch);
+	}
+
+	/* —— 页面 —— */
+	.layout-padding-auto {
+		padding: 8px !important;
+	}
+	.mold-page-head {
+		flex-direction: row;
+		align-items: flex-start;
+		gap: var(--mold-space-2);
+		margin-bottom: var(--mold-space-3);
+		h1 {
+			font-size: var(--el-font-size-large);
+			line-height: 26px;
+		}
+	}
+	.mold-page-head-actions {
+		width: auto;
+		margin-left: auto;
+	}
+	.mold-stat {
+		padding: 12px 14px;
+		min-height: 84px;
+	}
+	.mold-stat-value {
+		font-size: 22px;
+		line-height: 28px;
+	}
+	.mold-stat-foot {
+		display: none;
+	}
+	/* 筛选默认折叠，点「筛选」展开（规范 6 第 11 条） */
+	.mold-filter-bar {
+		display: none;
+		margin-bottom: var(--mold-space-2);
+		&.is-open {
+			display: block;
+		}
+		.el-form {
+			display: block;
+		}
+		.el-form-item {
+			display: flex;
+			flex-direction: column;
+			align-items: stretch;
+			margin: 0 0 8px;
+			.el-form-item__label {
+				justify-content: flex-start;
+				margin-bottom: 4px;
+				line-height: 20px;
+			}
+			.el-form-item__content {
+				width: 100%;
+				.el-input,
+				.el-select {
+					width: 100% !important;
+				}
+			}
+		}
+	}
+	.mold-mobile-filter-btn {
+		display: inline-flex;
+	}
+	/* 列设置/密度/刷新在 390 隐藏（规范 6 第 20、21 条；页头已有刷新） */
+	.mold-toolbar-right {
+		display: none !important;
+	}
+	.mold-toolbar {
+		gap: var(--mold-space-2);
+	}
+	.mold-toolbar .el-button {
+		min-height: var(--mold-touch);
+	}
+	/* 触控命中区 ≥44（规范 3.6 / G-14）：页面内所有按钮（含页头/工具栏圆形按钮） */
+	.page-scroll .el-button {
+		min-height: var(--mold-touch);
+	}
+	.page-scroll .el-button.is-circle {
+		min-width: var(--mold-touch);
+		min-height: var(--mold-touch);
+	}
+	.mold-list .el-button,
+	.mold-pager .el-button,
+	.mold-state .el-button {
+		min-height: var(--mold-touch);
+		min-width: var(--mold-touch);
+		margin-left: 0;
+	}
+	.mold-pager-mobile {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--mold-space-2);
+		width: 100%;
+		.mold-pager-info {
+			font-size: var(--el-font-size-small);
+			color: var(--el-text-color-regular);
+			text-align: center;
+			flex: 1;
+			font-variant-numeric: tabular-nums;
+			white-space: nowrap;
+		}
+		.el-button {
+			flex: 0 0 auto;
+		}
+	}
+	/* 总数并入 390 的「第 n/m 页 · 共 N 条」，避免挤成两行 */
+	.mold-pager .mold-pager-total {
+		display: none;
+	}
+	.mold-pager-desktop {
+		display: none;
+	}
+	.mold-pager {
+		margin-top: var(--mold-space-3);
+	}
+
+	/* —— 卡片模式：同一份 el-table DOM 转块级 —— */
+	.mold-list {
+		.el-table,
+		.el-table__inner-wrapper,
+		.el-table__body-wrapper,
+		.el-table__body-wrapper .el-scrollbar,
+		.el-table__body-wrapper .el-scrollbar__wrap,
+		.el-table__body-wrapper .el-scrollbar__view,
+		.el-table__body,
+		.el-table__body > tbody {
+			display: block;
+			width: auto;
+			min-width: 0;
+			height: auto;
+			overflow: visible;
+		}
+		/* Element Plus 给 body table 写了行内 width（全部列宽之和），必须覆盖，
+		   否则卡片按桌面总宽排版，右对齐的值被裁到视口外（390 实测 1110px） */
+		.el-table__body,
+		.el-table__body > tbody,
+		.el-table__body > tbody > tr.el-table__row {
+			width: 100% !important;
+			max-width: 100%;
+			box-sizing: border-box;
+		}
+		/* el-scrollbar__view 被 EP 写成 inline-block（行内样式），宽度收缩为内容宽，
+		   导致卡片只占约 196px；这里显式改回块级满宽 */
+		.el-table__body-wrapper .el-scrollbar__view {
+			display: block !important;
+			width: 100% !important;
+		}
+		.el-table__header-wrapper,
+		.el-table__footer-wrapper,
+		.el-table__fixed,
+		.el-table__fixed-right,
+		.el-table__empty-block,
+		colgroup {
+			display: none !important;
+		}
+		.el-table::before,
+		.el-table__inner-wrapper::before {
+			display: none;
+		}
+		.el-table__body > tbody > tr.el-table__row {
+			display: flex;
+			flex-direction: column;
+			background: var(--el-bg-color);
+			border: 1px solid var(--el-border-color-lighter);
+			border-radius: var(--mold-radius-card);
+			padding: 12px 14px;
+			margin-bottom: 10px;
+		}
+		.el-table__body td.el-table__cell {
+			display: block;
+			border: 0;
+			padding: 4px 0;
+			background: transparent;
+			.cell {
+				display: flex;
+				align-items: flex-start;
+				justify-content: space-between;
+				gap: 12px;
+				padding: 0;
+				white-space: normal;
+				overflow-wrap: anywhere;
+				line-height: 22px;
+			}
+		}
+		/* 选择列在卡片模式不参与（导出所选在 390 不做） */
+		.el-table__body td.el-table-column--selection {
+			display: none;
+		}
+		.cell-label {
+			display: block;
+			flex: 0 0 84px;
+			font-size: var(--el-font-size-extra-small);
+			line-height: 18px;
+			color: var(--el-text-color-secondary);
+			padding-top: 2px;
+		}
+		.cell-value {
+			flex: 1;
+			min-width: 0;
+			text-align: right;
+		}
+		/* 卡片标题：项目名称 + 编号（列定义仍驱动，CSS 只排序） */
+		.el-table__row .col-name {
+			order: -2;
+			padding-top: 0;
+			.cell-label {
+				display: none;
+			}
+			.cell {
+				justify-content: flex-start;
+			}
+			.cell-value {
+				text-align: left;
+				font-size: var(--el-font-size-medium);
+				line-height: 24px;
+				font-weight: 600;
+				color: var(--el-text-color-primary);
+				.el-button {
+					font-size: var(--el-font-size-medium);
+					font-weight: 600;
+					color: var(--el-text-color-primary);
+				}
+			}
+		}
+		.el-table__row .col-code {
+			order: -1;
+			padding-top: 0;
+			.cell-label {
+				display: none;
+			}
+			.cell {
+				justify-content: flex-start;
+			}
+			.cell-value {
+				text-align: left;
+				font-size: var(--el-font-size-extra-small);
+				line-height: 18px;
+				color: var(--el-text-color-secondary);
+			}
+		}
+		.el-table__row .col-progress .cell-value {
+			flex: 1;
+		}
+		.el-table__row .col-act {
+			margin-top: 6px;
+			padding-top: 8px;
+			border-top: 1px solid var(--el-border-color-lighter);
+			.cell {
+				justify-content: flex-end;
+			}
+			.cell-label {
+				display: none;
+			}
+		}
+		/* 覆盖上面「td.el-table__cell .cell」的 space-between（元素选择器权重更高） */
+		.el-table__body td.el-table__cell.col-act .cell {
+			justify-content: flex-end;
+		}
+		.el-table__body td.el-table__cell.col-name .cell,
+		.el-table__body td.el-table__cell.col-code .cell {
+			justify-content: flex-start;
+		}
+	}
+	.mold-state {
+		min-height: 200px;
+	}
+}
+
+/* 减少动效（G-15） */
+@media (prefers-reduced-motion: reduce) {
+	.mold-skeleton .mold-skel-block {
+		animation: none;
+	}
+	.mold-skip-link {
+		transition: none;
+	}
+}
+
+/* -----------------------------------------------------------------------------
+ * 1024 档表格内部横滚（修复轮阻断项 1）
+ *  - 900–1100：el-table max-height 让 body wrapper 成为滚动容器；
+ *  - 横向条常驻可见（scrollbar-always-on + 下面的强制显示兜底）；
+ *  - ≤900 是卡片布局，不显示横条；
+ *  - .page-scroll 自身不横滚（保持 overflow-x:hidden）。
+ * -------------------------------------------------------------------------- */
+@media (min-width: 901px) and (max-width: 1100px) {
+	.mold-list .el-table__body-wrapper .el-scrollbar__bar.is-horizontal {
+		display: block !important;
+		opacity: 1 !important;
+		height: 10px;
+		border-top: 1px solid var(--el-border-color-lighter);
+		background: var(--el-fill-color-light);
+	}
+	.mold-list .el-table__body-wrapper .el-scrollbar__bar.is-horizontal > div {
+		height: 6px !important;
+		margin-top: 1px;
+		border-radius: 3px;
+		background: var(--el-text-color-secondary);
+		opacity: 0.6;
+	}
+	.mold-list .el-table__body-wrapper .el-scrollbar__bar.is-horizontal:hover > div {
+		opacity: 0.85;
+	}
+}
+/* 900–1100：横滚可发现性提示 */
+.mold-scroll-hint {
+	margin: 0 0 6px;
+	font-size: 12px;
+	line-height: 18px;
+	color: var(--el-text-color-secondary);
+}
+
+/* 列宽手柄需要 th .cell 作为定位上下文 */
+.mold-list .el-table th.el-table__cell .cell {
+	position: relative;
+}
+/* 列宽手柄所在的表头单元不要裁掉右侧命中区 */
+.mold-list .el-table th.el-table__cell {
+	overflow: visible;
+}
+
+
+/* -----------------------------------------------------------------------------
+ * M7 新增页面共用（我的工作 / 采购 / 财务 / 更正 / 阶段历史 / 账号 / 审计）
+ * 只放跨页重复的骨架类，业务样式留在各页 scoped。
+ * -------------------------------------------------------------------------- */
+.mold-kv {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	gap: 10px 16px;
+	margin: 0;
+	div {
+		min-width: 0;
+	}
+	dt {
+		font-size: var(--el-font-size-extra-small);
+		line-height: 18px;
+		color: var(--el-text-color-secondary);
+	}
+	dd {
+		margin: 2px 0 0;
+		font-size: 14px;
+		line-height: 22px;
+		overflow-wrap: anywhere;
+	}
+}
+.mold-kv-tight {
+	gap: 6px 12px;
+}
+.mold-dialog-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 16px;
+}
+.mold-form-hint {
+	margin: 4px 0 0;
+	font-size: 12px;
+	line-height: 18px;
+	color: var(--el-text-color-secondary);
+}
+.mold-dialog-alert {
+	margin-bottom: 12px;
+}
+.mold-card {
+	border: 1px solid var(--el-border-color-lighter);
+	border-radius: var(--mold-radius-card);
+	background: var(--el-bg-color);
+	padding: 12px 14px;
+}
+.mold-card-title {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+	margin: 0 0 10px;
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 22px;
+}
+.mold-card-note {
+	font-size: 12px;
+	font-weight: 400;
+	color: var(--el-text-color-secondary);
+}
+.mold-tabs-card {
+	border: 1px solid var(--el-border-color-lighter);
+	border-radius: var(--mold-radius-card);
+	background: var(--el-bg-color);
+	padding: 0 14px 12px;
+}
+.mold-inline-note {
+	font-size: 12px;
+	line-height: 18px;
+	color: var(--el-text-color-secondary);
+}

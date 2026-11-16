@@ -1,0 +1,14 @@
+node_modules/
+target/
+dist/
+logs/
+upload/
+*.jar
+*.war
+*.log
+.DS_Store
+.env.local
+.env.*.local
+.idea/
+.vscode/
+*.iml

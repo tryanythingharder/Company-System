@@ -1,0 +1,30 @@
+# 生产 profile 模板（与 m2 组合使用：--spring.profiles.active=m2,prod）
+#
+# 本文件不含任何真实密钥；只声明必须由部署环境注入的配置项。
+# 缺失 MOLD_AUTH_CLIENT_SECRET 时 Spring 无法解析占位符，应用启动失败（fail-fast），
+# 避免生产静默使用开发默认值 mold。
+#
+# 密钥生成与轮换步骤见 pig/docs/m6-backend-prep-20261113.md 第 2 节。
+# 密钥不得写入本文件、仓库、日志或聊天。
+mold:
+  auth:
+    client-id: ${MOLD_AUTH_CLIENT_ID:mold}
+    client-secret: ${MOLD_AUTH_CLIENT_SECRET}
+
+# 生产不暴露 actuator / OpenAPI / Swagger UI；只保留健康检查。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+      discovery:
+        enabled: false
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

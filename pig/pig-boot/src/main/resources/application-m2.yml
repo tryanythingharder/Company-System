@@ -1,0 +1,80 @@
+# 模具加工管理系统 M2 后端切片专用 profile
+# 与上游 application-dev.yml 的差异全部集中在本文件，避免改动上游配置：
+#  1) 数据源指向 mold_dev（业务表 + Pig sys_* 同库）；
+#  2) JDBC 会话时区强制 UTC（业务 datetime(3) 一律存 UTC）；
+#  3) Redis 使用 db 6，与正在运行的 9999 实例隔离；
+#  4) 放行 /auth/login、/auth/refresh（其余沿用 Pig 的公开路径）。
+spring:
+  data:
+    redis:
+      host: pig-redis
+      port: 6379
+      database: 6
+      password: ${MOLD_REDIS_PASSWORD:}
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      username: root
+      password: root
+      url: jdbc:mysql://pig-mysql:3306/mold_dev?characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=false&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&allowMultiQueries=true&nullCatalogMeansCurrent=true&allowPublicKeyRetrieval=true
+
+file:
+  type: local
+  local:
+    base-path: /tmp/pig-m2-files
+
+aj:
+  captcha:
+    water-mark: pig4cloud
+
+security:
+  encodeKey: thanks,pig4cloud
+  oauth2:
+    client:
+      ignore-urls:
+        - /webjars/**
+        - /v3/api-docs/**
+        - /doc.html
+        - /swagger-ui.html
+        - /swagger-ui/**
+        - /swagger-resources
+        - /token/**
+        - /error
+        - /druid/**
+        - /actuator/**
+        - /code/**
+        - /auth/login
+        # 刷新令牌只换发 token、不触业务，纳入强制改密闸门白名单（共 4 条：refresh/me/logout/password）；
+        # 业务接口对 mustChangePassword=true 仍返回 403 PASSWORD_CHANGE_REQUIRED。
+        - /auth/refresh
+        # 注销固定 200：无论 token 是否已失效都直接由控制器处理；
+        # 控制器从 Authorization 头取 token 并尽力吊销（失败也按幂等成功）。
+        - /auth/logout
+        # 上线硬需求（契约 6.10.3 / G-7）：/healthz 免认证，探活只看 HTTP 200。
+        # 匹配的是去掉 context-path 后的 servlet 路径，故写 /healthz 而不是 /admin/healthz。
+        - /healthz
+
+jasypt:
+  encryptor:
+    password: pig
+
+# mold 认证相关：限流阈值 + mold:mold OAuth 客户端凭证
+# 凭证开发默认值仅用于本机；生产由 MOLD_AUTH_CLIENT_SECRET 注入（见 application-prod.yml），不落仓库。
+mold:
+  auth:
+    rate-limit-per-minute: 30
+    max-failures: 5
+    lock-minutes: 15
+    # 只有来自这些地址的请求才采信 X-Forwarded-For；其余一律用 getRemoteAddr()。
+    trusted-proxy-ips: ${MOLD_TRUSTED_PROXY_IPS:127.0.0.1,::1,0:0:0:0:0:0:0:1}
+    client-id: ${MOLD_AUTH_CLIENT_ID:mold}
+    client-secret: ${MOLD_AUTH_CLIENT_SECRET:mold}
+
+swagger:
+  gateway: http://127.0.0.1:9999
+  token-url: ${swagger.gateway}/admin/oauth2/token
+
+logging:
+  level:
+    com.pig4cloud.pig.mold: INFO
