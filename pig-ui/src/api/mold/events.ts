@@ -1,5 +1,6 @@
 import { onActivated, onDeactivated, onMounted, onUnmounted } from 'vue';
 import { Session } from '/@/utils/storage';
+import { redirectToLogin } from '/@/api/mold/authEvents';
 
 /**
  * 模具业务事件流（契约 6.10.4）
@@ -185,6 +186,7 @@ class MoldEventClient {
 		if (res.status === 401) {
 			this.emitControl('session_expired', {});
 			this.stop();
+			redirectToLogin();
 			return;
 		}
 		if (res.status === 422) {
@@ -247,6 +249,8 @@ class MoldEventClient {
 			} else if (frameEvent === 'session_expired') {
 				this.emitControl('session_expired', payload || {});
 				this.stop();
+				// 服务端主动踢下线（账号被停用/删除）：与 401 同一处理，清会话回登录页
+				redirectToLogin();
 			} else if (frameEvent === 'stream_error') {
 				this.emitControl('stream_error', payload || {});
 			} else {

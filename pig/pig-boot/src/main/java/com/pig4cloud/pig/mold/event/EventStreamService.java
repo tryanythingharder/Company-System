@@ -19,6 +19,7 @@
 package com.pig4cloud.pig.mold.event;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pig4cloud.pig.mold.security.AccountStatusGate;
 import com.pig4cloud.pig.mold.security.MoldActor;
 import com.pig4cloud.pig.mold.web.MoldApiException;
 import com.pig4cloud.pig.mold.web.MoldTime;
@@ -262,10 +263,17 @@ public class EventStreamService {
 			return;
 		}
 		try {
+			// 存活判定要同时看两张表：users.status 是业务身份，sys_user.lock_flag/del_flag
+			// 是账号管理的权威停用标记（此前只查 users，停用后事件流仍继续推送）。
 			List<Map<String, Object>> users = jdbcTemplate.queryForList(
-					"SELECT status, must_change_password FROM users WHERE id = ?", connection.userId);
+					"SELECT u.status, u.must_change_password, COALESCE(su.lock_flag, '0') AS lock_flag, "
+							+ "COALESCE(su.del_flag, '0') AS del_flag FROM users u "
+							+ "LEFT JOIN sys_user su ON su.user_id = u.sys_user_id WHERE u.id = ?",
+					connection.userId);
 			if (users.isEmpty() || !"ACTIVE".equals(users.get(0).get("status"))
-					|| Boolean.TRUE.equals(users.get(0).get("must_change_password"))) {
+					|| Boolean.TRUE.equals(users.get(0).get("must_change_password"))
+					|| AccountStatusGate.LOCK_FLAG_LOCKED.equals(String.valueOf(users.get(0).get("lock_flag")))
+					|| AccountStatusGate.DEL_FLAG_DELETED.equals(String.valueOf(users.get(0).get("del_flag")))) {
 				send(connection, "session_expired", Map.of("code", "SESSION_EXPIRED"));
 				close(connection, "session_expired");
 				return;

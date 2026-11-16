@@ -71,6 +71,15 @@ mold:
     client-id: ${MOLD_AUTH_CLIENT_ID:mold}
     client-secret: ${MOLD_AUTH_CLIENT_SECRET:mold}
 
+# 接口文档在本部署一律关闭：m2 是当前部署 profile（prod 另有同名关闭配置）。
+# 只关 springdoc 仍会留下 knife4j 打进 jar 的静态 /doc.html，故另有
+# MoldDocsDisabledFilter 对文档路径统一返回 404，避免「文档页能开、只是没数据」。
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 swagger:
   gateway: http://127.0.0.1:9999
   token-url: ${swagger.gateway}/admin/oauth2/token

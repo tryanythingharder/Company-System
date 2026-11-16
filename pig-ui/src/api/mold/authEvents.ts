@@ -7,6 +7,7 @@
  *
  * 前端跳转只是体验层，服务端仍会对每个请求重新鉴权。
  */
+import { ElMessage } from 'element-plus';
 
 export const MUST_CHANGE_KEY = 'mold.mustChangePassword';
 
@@ -45,13 +46,15 @@ export function currentHashPath(): string {
 	return hash;
 }
 
-/** 真实 401：清会话并进登录页；同一时刻只跳一次 */
+/** 真实 401：清会话并进登录页；同一时刻只跳一次，并提示一句「登录已失效」 */
 let redirecting = false;
 export function redirectToLogin() {
 	if (redirecting) return;
 	if (window.location.hash.startsWith('#/login')) return;
 	redirecting = true;
 	try {
+		// 用轻提示而非弹窗：hash 跳转不刷新页面，提示能一直留到用户看到登录框
+		ElMessage({ message: '登录已失效，请重新登录', type: 'warning', duration: 4000, showClose: true });
 		// 动态 import 避免与 storage 的初始化顺序耦合
 		import('/@/utils/storage').then(({ Session }) => {
 			Session.clear();

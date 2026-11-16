@@ -13,6 +13,7 @@ package com.pig4cloud.pig.mold.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pig4cloud.pig.mold.security.AccountStatusGate;
 import com.pig4cloud.pig.mold.security.MoldActor;
 import com.pig4cloud.pig.mold.security.MoldActorResolver;
 import com.pig4cloud.pig.mold.security.MoldCapabilities;
@@ -43,6 +44,8 @@ public class AuthService {
 
 	private final LoginRateLimiter rateLimiter;
 
+	private final AccountStatusGate accountStatusGate;
+
 	private final RestClient restClient;
 
 	/** OAuth 客户端 ID（默认 mold）；生产由配置覆盖。 */
@@ -52,6 +55,7 @@ public class AuthService {
 	private final String clientSecret;
 
 	public AuthService(ObjectMapper objectMapper, MoldActorResolver actorResolver, LoginRateLimiter rateLimiter,
+			AccountStatusGate accountStatusGate,
 			@Value("${server.port:9999}") int serverPort,
 			@Value("${server.servlet.context-path:}") String contextPath,
 			@Value("${mold.auth.client-id:mold}") String clientId,
@@ -59,6 +63,7 @@ public class AuthService {
 		this.objectMapper = objectMapper;
 		this.actorResolver = actorResolver;
 		this.rateLimiter = rateLimiter;
+		this.accountStatusGate = accountStatusGate;
 		this.clientId = clientId;
 		this.clientSecret = clientSecret;
 		this.restClient = RestClient.builder().baseUrl("http://127.0.0.1:" + serverPort + contextPath).build();
@@ -92,6 +97,16 @@ public class AuthService {
 		rateLimiter.onSuccess(username);
 
 		JsonNode token = parse(response.body());
+
+		// 口令已校验通过，再查 sys_user 权威状态（放在口令之后，避免账号枚举）。
+		// 命中即吊销刚签发的 token，避免停用账号手里留着一张能用的凭证。
+		AccountStatusGate.State accountState = accountStatusGate.byUsername(username);
+		if (accountState == AccountStatusGate.State.LOCKED || accountState == AccountStatusGate.State.DELETED) {
+			logout(token.path("access_token").asText(null));
+			throw new MoldApiException(403, "FORBIDDEN",
+					accountState == AccountStatusGate.State.DELETED ? "账号已删除" : "账号已停用");
+		}
+
 		MoldActor actor = actorResolver.byLoginName(username);
 		if (!"ACTIVE".equals(actor.status())) {
 			throw new MoldApiException(403, "FORBIDDEN", "账号已停用");

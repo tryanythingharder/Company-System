@@ -78,7 +78,7 @@ import { useRouter } from 'vue-router';
 import { Coin, DataLine, Document, House, List, Search, Tickets, User, Clock, Refresh } from '@element-plus/icons-vue';
 import { fetchProjectPage, type MoldProjectRow } from '/@/api/mold/projects';
 import { describeMoldError } from '/@/api/mold/errors';
-import { useMoldPermissions } from '/@/api/mold/permissions';
+import { canAccessRoute } from '/@/router/menuPermission';
 
 interface CmdItem {
 	id: string;
@@ -120,11 +120,8 @@ const PAGES = [
 ];
 
 /** 与导航同一套判定：权限没取到就放行，页面自身 403 兜底 */
-const { can, source: permissionSource } = useMoldPermissions();
 function pageAllowed(caps?: string[]): boolean {
-	if (!caps || !caps.length) return true;
-	if (permissionSource.value !== 'capabilities') return true;
-	return caps.some((capability) => can(capability));
+	return canAccessRoute({ permissions: caps });
 }
 
 const pageItems = computed<CmdItem[]>(() => {

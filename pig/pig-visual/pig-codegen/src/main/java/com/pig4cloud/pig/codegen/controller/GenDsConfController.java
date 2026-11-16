@@ -32,6 +32,7 @@ import com.pig4cloud.pig.common.xss.core.XssCleanIgnore;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 
 import javax.sql.DataSource;
@@ -42,6 +43,7 @@ import javax.sql.DataSource;
  * @author lengleng
  * @date 2019-03-31 16:00:20
  */
+@ConditionalOnProperty(name = "pig.codegen.enabled", havingValue = "true")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/dsconf")

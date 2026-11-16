@@ -18,7 +18,10 @@ import { useMoldPermissions } from '/@/api/mold/permissions';
 
 /** 当前权限状态是否足以做严格过滤 */
 function strictMode(): boolean {
-	return useMoldPermissions().source.value === 'capabilities';
+	const { source, isAdmin } = useMoldPermissions();
+	// 超管/OWNER 直接放行：避免权限接口缺项把超管菜单清空
+	if (isAdmin.value) return false;
+	return source.value === 'capabilities';
 }
 
 /** 路由/命令面板条目是否对当前账号可见 */

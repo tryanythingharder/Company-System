@@ -69,11 +69,15 @@ public class SysMenuController {
 
 	/**
 	 * 返回树形菜单集合
+	 *
+	 * 全量菜单树会暴露所有权限串与菜单结构，按菜单管理权限收口（现有 sys_menu_* 权限串，
+	 * 仅 ROLE_ADMIN 持有）；普通登录用户不再可读。同族的 /tree/{roleId}、/details 一并收口。
 	 * @param parentId 父节点ID
 	 * @param menuName 菜单名称
 	 * @return 树形菜单
 	 */
 	@GetMapping(value = "/tree")
+	@HasPermission("sys_menu_add,sys_menu_edit,sys_menu_del")
 	public R getTree(Long parentId, String menuName, String type) {
 		return R.ok(sysMenuService.treeMenu(parentId, menuName, type));
 	}
@@ -84,6 +88,7 @@ public class SysMenuController {
 	 * @return 属性集合
 	 */
 	@GetMapping("/tree/{roleId}")
+	@HasPermission("sys_menu_add,sys_menu_edit,sys_menu_del")
 	public R getRoleTree(@PathVariable Long roleId) {
 		return R.ok(sysMenuService.findMenuByRoleId(roleId).stream().map(SysMenu::getMenuId).toList());
 	}
@@ -94,6 +99,7 @@ public class SysMenuController {
 	 * @return {@link R }
 	 */
 	@GetMapping("/details")
+	@HasPermission("sys_menu_add,sys_menu_edit,sys_menu_del")
 	public R getDetails(@ParameterObject SysMenu query) {
 		return R.ok(sysMenuService.list(Wrappers.query(query)));
 	}

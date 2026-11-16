@@ -32,6 +32,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.*;
 
@@ -43,6 +44,7 @@ import java.util.List;
  * @author luolin
  * @date 2022-09-23 21:56:11
  */
+@ConditionalOnProperty(name = "pig.codegen.enabled", havingValue = "true")
 @RestController
 @Slf4j
 @RequiredArgsConstructor

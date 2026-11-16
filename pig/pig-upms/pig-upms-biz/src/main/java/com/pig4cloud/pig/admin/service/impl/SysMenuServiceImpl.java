@@ -80,7 +80,7 @@ public class SysMenuServiceImpl extends ServiceImpl<SysMenuMapper, SysMenu> impl
 
 	@Override
 	@Transactional(rollbackFor = Exception.class)
-	@CacheEvict(value = CacheConstants.MENU_DETAILS, allEntries = true)
+	@CacheEvict(value = { CacheConstants.MENU_DETAILS, CacheConstants.USER_DETAILS }, allEntries = true)
 	public R removeMenuById(Long id) {
 		// 1. 检查菜单是否存在
 		SysMenu menu = this.getById(id);
@@ -119,7 +119,7 @@ public class SysMenuServiceImpl extends ServiceImpl<SysMenuMapper, SysMenu> impl
 	}
 
 	@Override
-	@CacheEvict(value = CacheConstants.MENU_DETAILS, allEntries = true)
+	@CacheEvict(value = { CacheConstants.MENU_DETAILS, CacheConstants.USER_DETAILS }, allEntries = true)
 	public Boolean updateMenuById(SysMenu sysMenu) {
 		return this.updateById(sysMenu);
 	}

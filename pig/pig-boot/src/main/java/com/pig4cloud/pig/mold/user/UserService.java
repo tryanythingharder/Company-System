@@ -208,6 +208,9 @@ public class UserService {
 				UPDATE sys_user SET nickname = ?, name = ?, lock_flag = ? WHERE user_id = ?
 				""", displayName, displayName, "DISABLED".equals(status) ? "9" : "0",
 				beforeRow.get("sys_user_id"));
+		// 启停必须同时清 Pig 的登录缓存：UserInfo 是永久缓存（无 TTL），
+		// 不清就会出现「停用后仍能登录」和「重新启用后仍登不进」两种反向故障。
+		evictUserDetails((String) beforeRow.get("login_name"));
 
 		Map<String, Object> after = dto(loadRow(userId, false));
 		auditWriter.record("USER", userId, "UPDATE", dto(beforeRow), after);
@@ -233,6 +236,10 @@ public class UserService {
 		applyRoles(userId, ((Number) beforeRow.get("sys_user_id")).longValue(), nextRoles, actor.userId());
 		jdbcTemplate.update("UPDATE users SET version = version + 1, updated_at = UTC_TIMESTAMP(3) WHERE id = ?",
 				userId);
+		// 改角色必须清 Pig 的登录缓存：UserInfo 里带着按角色算出来的 permissions 数组，
+		// 且资源服务器每个请求都从该缓存重建 authorities。不清缓存时，改完角色在界面上
+		// 显示成功，但对方（含已登录会话）的权限一直沿用旧值，直到缓存被别的原因清掉。
+		evictUserDetails((String) beforeRow.get("login_name"));
 
 		Map<String, Object> after = dto(loadRow(userId, false));
 		auditWriter.record("USER", userId, "SET_ROLES", dto(beforeRow), after);

@@ -62,6 +62,11 @@ public class SysRoleMenuServiceImpl extends ServiceImpl<SysRoleMenuMapper, SysRo
 	public Boolean saveRoleMenus(Long roleId, String menuIds) {
 		this.remove(Wrappers.<SysRoleMenu>query().lambda().eq(SysRoleMenu::getRoleId, roleId));
 
+		// 清空 userinfo：角色的权限集合变了，所有用户的 permissions 缓存都失效。
+		// 必须放在 menuIds 为空的提前返回之前——「把该角色的权限全部撤掉」正是最需要
+		// 清缓存的场景，原先写在 return 之后会导致这种撤权静默不生效。
+		cacheManager.getCache(CacheConstants.USER_DETAILS).clear();
+
 		if (StrUtil.isBlank(menuIds)) {
 			return Boolean.TRUE;
 		}
@@ -72,8 +77,6 @@ public class SysRoleMenuServiceImpl extends ServiceImpl<SysRoleMenuMapper, SysRo
 			return roleMenu;
 		}).toList();
 
-		// 清空userinfo
-		cacheManager.getCache(CacheConstants.USER_DETAILS).clear();
 		this.saveBatch(roleMenuList);
 		return Boolean.TRUE;
 	}

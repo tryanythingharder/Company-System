@@ -4,6 +4,7 @@ import { useMessageBox } from '/@/hooks/message';
 import qs from 'qs';
 import other from './other';
 import { wrapEncryption, encryptRequestParams, decrypt } from './apiCrypto';
+import { redirectToLogin } from '/@/api/mold/authEvents';
 
 // 常用header
 export enum CommonHeaderEnum {
@@ -97,6 +98,12 @@ service.interceptors.response.use(handleResponse, (error) => {
 	const retryAfter = Number(error?.response?.headers?.['retry-after']) || 0;
 	if (status === 423) {
 		return Promise.reject({ msg: '"演示环境，仅供预览"' });
+	}
+
+	// 401：已登录状态下凭证失效（账号被停用 / 会话被吊销）→ 清会话回登录页。
+	// 登录接口自身的 401 是「账号或密码错误」：带 skipToken、且登录前无 token，不在此列，避免登录页死循环。
+	if (status === 401 && !error?.config?.headers?.skipToken && Session.getToken()) {
+		redirectToLogin();
 	}
 
 	if (status === 424) {

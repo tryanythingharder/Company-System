@@ -24,6 +24,7 @@ import com.pig4cloud.pig.common.core.util.R;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,6 +42,7 @@ import java.util.zip.ZipOutputStream;
  * @author lengleng
  * @date 2018-07-30
  */
+@ConditionalOnProperty(name = "pig.codegen.enabled", havingValue = "true")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/generator")

@@ -37,6 +37,7 @@ import com.pig4cloud.pig.common.core.util.MsgUtils;
 import com.pig4cloud.pig.common.core.util.R;
 import com.pig4cloud.pig.common.excel.vo.ErrorMessage;
 import lombok.AllArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -89,6 +90,7 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
 	 */
 	@Override
 	@Transactional(rollbackFor = Exception.class)
+	@CacheEvict(value = { CacheConstants.MENU_DETAILS, CacheConstants.USER_DETAILS }, allEntries = true)
 	public Boolean removeRoleByIds(Long[] ids) {
 		roleMenuService
 			.remove(Wrappers.<SysRoleMenu>update().lambda().in(SysRoleMenu::getRoleId, CollUtil.toList(ids)));
