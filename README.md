@@ -50,3 +50,13 @@ cd pig-ui && npm install && npm run dev
 - 本仓库只含源码与配置，不含内部文档、验收脚本、构建产物与运行数据。
 - 上游 pig / pig-ui 采用 Apache License 2.0，本仓库保留其许可证文件。
 - 配置中的数据库口令为本地开发默认值，部署时请通过环境变量覆盖（`MOLD_AUTH_CLIENT_SECRET` 等）。
+
+## 部署到服务器前必须改的三处
+
+仓库里的口令都是占位/开发默认值，直接部署会登录失败或明文暴露：
+
+1. **前端** `pig-ui/.env.production` 的 `VITE_OAUTH2_PASSWORD_CLIENT`：仓库里是 `change-me`，须改成 `客户端ID:密钥`（例如 `mold:<你的密钥>`），否则登录恒 401。
+2. **后端** 生产用 `--spring.profiles.active=m2,prod`，必须注入环境变量 `MOLD_AUTH_CLIENT_SECRET`（同一密钥）。缺这个变量应用会直接启动失败，这是有意的 fail-fast。
+3. **数据库/Redis** 口令：`application-m2.yml` 与 `docker-compose*.yml` 里是 `root`，上线前改掉；Redis 若对外开放必须设 `requirepass`。
+
+密钥只用 `A-Za-z0-9_-`（base64url）。实测含 `+` 时 Spring Authorization Server 的客户端认证恒失败 `invalid_client`。轮换用 `pig/db/rotate-mold-client-secret.sh`，改完记得清 Redis 里的 `pig_oauth:client:details::<clientId>`，否则仍按旧密钥比对。
