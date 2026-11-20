@@ -60,3 +60,16 @@ cd pig-ui && npm install && npm run dev
 3. **数据库/Redis** 口令：`application-m2.yml` 与 `docker-compose*.yml` 里是 `root`，上线前改掉；Redis 若对外开放必须设 `requirepass`。
 
 密钥只用 `A-Za-z0-9_-`（base64url）。实测含 `+` 时 Spring Authorization Server 的客户端认证恒失败 `invalid_client`。轮换用 `pig/db/rotate-mold-client-secret.sh`，改完记得清 Redis 里的 `pig_oauth:client:details::<clientId>`，否则仍按旧密钥比对。
+
+## 初始化数据库
+
+业务库名为 `mold_dev`。`pig/db/init-mold-db.sh` 依次导入：Pig 基础表（`pig.sql`，库名自动改写为 `mold_dev`）、业务表（`mold_schema.sql`）、角色与菜单种子（`mold_pig_bridge.sql`）、OAuth 客户端与权限补丁。
+
+```bash
+cd pig/db
+MYSQL_PWD='<数据库口令>' ./init-mold-db.sh
+```
+
+完成后默认管理员为 `admin / 123456`，首次登录后立即改密，并用它建一个自己的 `OWNER` 账号。脚本会重建表结构，**不要对已有数据的库执行**。
+
+前端构建：`cd pig-ui && npm install && npm run build`；`dist/` 交给 Nginx，SPA fallback 到 `index.html`，`/api` 反代到后端并映射到 `/admin`（`/api/admin/auth/login` → `http://127.0.0.1:9999/admin/auth/login`）。
