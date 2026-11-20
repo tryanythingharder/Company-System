@@ -3,7 +3,7 @@
 #
 # 只更新 mold_dev 的 sys_oauth_client_details 一行；不写文件、不回显密钥。
 # 用法：
-#   export MOLD_AUTH_CLIENT_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
+#   export MOLD_AUTH_CLIENT_SECRET="$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n')"
 #   export MYSQL_PWD='<数据库口令>'
 #   ./rotate-mold-client-secret.sh
 # 之后：把同一个值注入应用环境变量 MOLD_AUTH_CLIENT_SECRET，重启应用。
@@ -19,9 +19,12 @@ set -euo pipefail
 : "${MOLD_DB_USER:=root}"
 : "${MOLD_DB_NAME:=mold_dev}"
 
-# 只允许 base64 字符，避免 SQL 注入/转义问题
+# 只允许 base64url 字符（A-Za-z0-9_-）。
+# 必须排除 '+' '/' '='：实测密钥含 '+' 时 Spring Authorization Server 的客户端认证
+# 恒定失败（invalid_client / "Client authentication failed: client_secret"），
+# 因为 '+' 在客户端认证链路里被当作空格解码。base64url 不含这三个字符，最稳。
 case "$MOLD_AUTH_CLIENT_SECRET" in
-  *[!A-Za-z0-9+/=]*) echo "MOLD_AUTH_CLIENT_SECRET 含非 base64 字符，已拒绝" >&2; exit 2 ;;
+  *[!A-Za-z0-9_-]*) echo "MOLD_AUTH_CLIENT_SECRET 含非 base64url 字符（禁止 + / =），已拒绝" >&2; exit 2 ;;
 esac
 
 mysql --protocol=TCP -h "$MOLD_DB_HOST" -P "$MOLD_DB_PORT" -u "$MOLD_DB_USER" "$MOLD_DB_NAME" <<SQL
