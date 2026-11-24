@@ -238,7 +238,7 @@ async function onDelete(row: MoldAttachmentRow) {
 	if (mustReason) {
 		try {
 			const { value } = await ElMessageBox.prompt(
-				`财务附件删除必须填写原因（1–500 字）。删除为软删，服务端保留文件与原因。`,
+				`删除财务附件必须填写原因（1–500 字）。删除后列表里不再显示，但文件和原因会留档备查。`,
 				`删除财务附件「${row.fileName}」`,
 				{
 					confirmButtonText: '删除',
@@ -259,7 +259,7 @@ async function onDelete(row: MoldAttachmentRow) {
 		}
 	} else {
 		try {
-			await ElMessageBox.confirm(`确定删除附件「${row.fileName}」？删除为软删，服务端保留文件与原因。`, '删除附件', {
+			await ElMessageBox.confirm(`确定删除附件「${row.fileName}」？删除后列表里不再显示，文件会留档备查。`, '删除附件', {
 				type: 'warning',
 				confirmButtonText: '删除',
 				cancelButtonText: '取消',

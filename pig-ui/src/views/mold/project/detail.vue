@@ -46,7 +46,6 @@
 									<el-tag :type="project.businessType === 'MOLD_SET' ? 'primary' : 'warning'" effect="plain">
 										{{ businessTypeText(project.businessType) }}
 									</el-tag>
-									<span class="mold-detail-version">v{{ project.version }}</span>
 								</div>
 							</div>
 							<div class="mold-detail-actions">
@@ -61,9 +60,15 @@
 								<dl class="mold-kv">
 									<div><dt>项目负责人</dt><dd>{{ project.owner?.displayName || '—' }}</dd></div>
 									<div><dt>业务类型</dt><dd>{{ businessTypeText(project.businessType) }}</dd></div>
-									<div><dt>计划交期</dt><dd :class="{ 'is-over': overdue }">{{ formatDate(project.dueDate) }}</dd></div>
+									<div>
+										<dt>计划交期</dt>
+										<dd :class="{ 'is-over': overdue }">
+											{{ formatDate(project.dueDate) }}
+											<span v-if="dueHint" class="mold-due-hint" :class="{ 'is-over': overdue }">{{ dueHint }}</span>
+										</dd>
+									</div>
 									<div><dt>最近更新</dt><dd>{{ formatDateTime(project.lastUpdatedAt) }}</dd></div>
-									<div><dt>数据版本</dt><dd>v{{ project.version }}（If-Match）</dd></div>
+									
 								</dl>
 							</div>
 
@@ -86,9 +91,10 @@
 									<div class="mold-stage-count is-done"><span class="n">{{ stageCounts.completed }}</span><span class="l">已完成</span></div>
 								</div>
 								<div v-if="!stagesAvailable" class="mold-detail-pending" data-testid="stages-pending">
-									阶段明细加载失败，上方 4 类数量来自项目详情 DTO。
+									阶段明细没能加载出来，上面的数量仍然是准确的。
 									<el-button link type="primary" size="small" @click="loadStages">重试</el-button>
 								</div>
+								<div v-else-if="!stages.length" class="mold-detail-pending" data-testid="stages-empty">还没有阶段，可在右上角「更多 → 添加阶段」。</div>
 								<ul v-else class="mold-stage-list">
 									<li v-for="s in stages" :key="s.id">
 										<span class="mold-stage-name">{{ s.sortOrder }}. {{ s.name }}</span>
@@ -223,10 +229,6 @@
 								<div><dt>项目备注</dt><dd class="mold-note-text">{{ project.note || '—' }}</dd></div>
 								<div><dt>完工说明</dt><dd class="mold-note-text">{{ project.completionNote || '—' }}</dd></div>
 							</dl>
-							<p class="mold-detail-source">
-								数据源：<code>GET /admin/mold/projects/{{ project.id }}</code> · 版本 v{{ project.version }} ·
-								最近更新 {{ formatDateTime(project.lastUpdatedAt) }}
-							</p>
 						</div>
 					</template>
 				</div>
@@ -430,6 +432,18 @@ const overdue = computed(() => {
 	if (!p?.dueDate || p.status === 'COMPLETED' || p.status === 'CANCELLED') return false;
 	return p.dueDate < todayStamp();
 });
+// 交期提示：逾期 N 天 / 今天到期 / 还剩 N 天（7 天内才提示）；已完工、已取消不提示
+const dueHint = computed(() => {
+	const p = project.value;
+	if (!p?.dueDate || p.status === 'COMPLETED' || p.status === 'CANCELLED') return '';
+	const day = (x: string) => new Date(String(x).slice(0, 10) + 'T00:00:00').getTime();
+	const diff = Math.round((day(p.dueDate) - day(todayStamp())) / 86400000);
+	if (Number.isNaN(diff)) return '';
+	if (diff < 0) return `已逾期 ${-diff} 天`;
+	if (diff === 0) return '今天到期';
+	if (diff <= 7) return `还剩 ${diff} 天`;
+	return '';
+});
 
 const businessTypeText = (t: string) => ({ MOLD_SET: '整套模具制作', PART_PROCESS: '零件·工序加工' } as Record<string, string>)[t] || t || '—';
 const statusText = (s: string) =>
@@ -462,7 +476,7 @@ const completionDesc = computed(() => {
 	}
 	if (p.status === 'CANCELLED') return '项目已取消并关闭，不能再完工、编辑或推进阶段。取消原因可在审计日志中查看。';
 	const hold = p.status === 'ON_HOLD' ? '项目当前已暂停。' : '';
-	if (stageCounts.value.total === 0) return `${hold}还没有有效阶段，至少需要一个阶段才能确认完工。`;
+	if (stageCounts.value.total === 0) return `${hold}还没有阶段。先在右上角「更多 → 添加阶段」，全部完成后才能确认完工。`;
 	return `${hold}已完成 ${stageCounts.value.completed}/${stageCounts.value.total} 个阶段，未解决异常 ${p.openIssueCount || 0} 个；两项都满足后由负责人或老板确认。`;
 });
 
@@ -1022,6 +1036,20 @@ onMounted(() => {
 	}
 	.mold-stage-counts {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+/* 交期提示 */
+.mold-due-hint {
+	margin-left: 6px;
+	padding: 0 6px;
+	border-radius: 4px;
+	font-size: 12px;
+	line-height: 20px;
+	color: var(--el-color-warning-dark-2);
+	background: var(--el-color-warning-light-9);
+	&.is-over {
+		color: var(--el-color-danger);
+		background: var(--el-color-danger-light-9);
 	}
 }
 </style>

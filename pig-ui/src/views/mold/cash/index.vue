@@ -7,7 +7,7 @@
 						<div>
 							<h1>财务收支</h1>
 							<p>
-								收支流水与报表；录错不改原单，作废后重录或用「更正记录」替换。已对账流水不可编辑。
+								记录每一笔收入和支出。记错了不要改原单，用「更正」替换或作废后重记；已对账的流水不能再改。
 								<span v-if="tab === 'entries' && state !== 'forbidden' && state !== 'error'" class="mold-page-total">
 									共 {{ state === 'loading' ? '—' : total }} 条
 								</span>
@@ -30,37 +30,37 @@
 									</el-button>
 									<el-button v-if="canViewAll" :icon="Document" @click="goCorrections()">更正记录</el-button>
 								</div>
-								<div class="mold-toolbar-right mold-inline-note">
-									本页记录客户收付与日常/其他收支；采购类历史流水保留可查，新增支出直接记「日常支出」。
+								<div class="mold-toolbar-note mold-inline-note">
+									采购付款请到「采购台账」登记；这里记客户收付款和日常支出。
 								</div>
 							</div>
 
 							<div class="mold-filter-bar" :class="{ 'is-open': filterOpen }">
 								<el-form :inline="true" @submit.prevent="onQuery">
 									<el-form-item label="方向">
-										<el-select v-model="filters.direction" placeholder="全部" clearable style="width: 110px">
+										<el-select v-model="filters.direction" placeholder="全部" clearable style="width: 110px" @change="onQuery">
 											<el-option label="收入" value="IN" />
 											<el-option label="支出" value="OUT" />
 										</el-select>
 									</el-form-item>
 									<el-form-item label="类别">
-										<el-select v-model="filters.category" placeholder="全部" clearable style="width: 150px">
+										<el-select v-model="filters.category" placeholder="全部" clearable style="width: 150px" @change="onQuery">
 											<el-option v-for="(label, value) in CATEGORY_LABEL" :key="value" :label="label" :value="value" />
 										</el-select>
 									</el-form-item>
 									<el-form-item label="状态">
-										<el-select v-model="filters.status" placeholder="全部" clearable style="width: 120px">
+										<el-select v-model="filters.status" placeholder="全部" clearable style="width: 120px" @change="onQuery">
 											<el-option label="已确认" value="CONFIRMED" />
 											<el-option label="已作废" value="VOID" />
 										</el-select>
 									</el-form-item>
 									<el-form-item label="归属">
-										<el-select v-model="filters.allocationStatus" placeholder="全部" clearable style="width: 130px">
+										<el-select v-model="filters.allocationStatus" placeholder="全部" clearable style="width: 130px" @change="onQuery">
 											<el-option v-for="(label, value) in ALLOCATION_LABEL" :key="value" :label="label" :value="value" />
 										</el-select>
 									</el-form-item>
 									<el-form-item label="项目">
-										<el-select v-model="filters.projectId" placeholder="全部" clearable filterable style="width: 200px">
+										<el-select v-model="filters.projectId" placeholder="全部" clearable filterable style="width: 200px" @change="onQuery">
 											<el-option v-for="p in projects" :key="p.id" :label="`${p.code} · ${p.name}`" :value="p.id" />
 										</el-select>
 									</el-form-item>
@@ -182,11 +182,11 @@
 												<template #dropdown>
 													<el-dropdown-menu>
 														<el-dropdown-item v-if="canUpdate && row.status === 'CONFIRMED' && !row.reconciledAt" command="edit">编辑备注/凭证</el-dropdown-item>
-														<el-dropdown-item v-if="canCorrection && canCorrectRow(row)" command="correct">更正…</el-dropdown-item>
+														<el-dropdown-item v-if="canCorrection && canCorrectRow(row)" command="correct">更正（金额、日期、归属记错了）</el-dropdown-item>
 														<el-dropdown-item v-if="canReconcile && row.status === 'CONFIRMED' && !row.reconciledAt" command="reconcile">标记对账</el-dropdown-item>
 														<el-dropdown-item v-if="canReconcile && row.reconciledAt" command="unreconcile">取消对账</el-dropdown-item>
 														<el-dropdown-item v-if="canReverse && canReverseRow(row)" command="reverse">冲正</el-dropdown-item>
-														<el-dropdown-item v-if="canVoid && canVoidRow(row)" command="void">作废</el-dropdown-item>
+														<el-dropdown-item v-if="canVoid && canVoidRow(row)" command="void" divided class="mold-menu-danger">作废</el-dropdown-item>
 														<el-dropdown-item v-if="!hasRowAction(row)" disabled>无可执行操作</el-dropdown-item>
 													</el-dropdown-menu>
 												</template>
@@ -228,7 +228,7 @@
 										</el-radio-group>
 									</el-form-item>
 									<el-form-item v-if="reportMode === 'project'" label="项目">
-										<el-select v-model="reportProjectId" filterable placeholder="选择项目" style="width: 220px">
+										<el-select v-model="reportProjectId" filterable placeholder="选择项目" style="width: 220px" @change="loadReport">
 											<el-option v-for="p in projects" :key="p.id" :label="`${p.code} · ${p.name}`" :value="p.id" />
 										</el-select>
 									</el-form-item>
@@ -239,12 +239,12 @@
 											value-format="YYYY-MM-DD"
 											range-separator="至"
 											start-placeholder="开始"
-											end-placeholder="结束"
+											end-placeholder="结束" @change="loadReport"
 											style="width: 240px"
 										/>
 									</el-form-item>
 									<el-form-item>
-										<span class="mold-report-date-hint">日期同时过滤流水日期与采购日期（已知口径，待业务确认）</span>
+										<span class="mold-report-date-hint">按流水日期和采购日期筛选</span>
 									</el-form-item>
 									<el-form-item>
 										<el-button type="primary" :icon="Search" :loading="reportLoading" @click="loadReport">查询</el-button>
@@ -262,7 +262,7 @@
 							</div>
 							<template v-else-if="report">
 								<div v-if="!report.currencies?.length" class="mold-card mold-inline-note">
-									该条件下没有已确认流水。报表只统计 status=CONFIRMED 的记录，作废与冲正净额为 0。
+									这个时间段内没有已确认的流水。报表只统计已确认的流水，作废和被更正的不计入。
 								</div>
 								<template v-else>
 									<div class="mold-report-cards">
@@ -324,7 +324,7 @@
 		<!-- 编辑：只开放备注与凭证号（金额/归属走更正） -->
 		<el-dialog v-model="editVisible" :title="`编辑 ${editTarget?.code || ''}`" :width="dialogWidth" append-to-body :close-on-click-modal="false" class="mold-dialog">
 			<el-alert v-if="editError" type="error" :closable="false" show-icon :title="editError" class="mold-dialog-alert" />
-			<el-alert type="info" :closable="false" show-icon title="金额、日期、归属不可直接修改" description="录错请用「更正」生成替换流水；本弹窗只改备注与凭证号。" class="mold-dialog-alert" />
+			<el-alert type="info" :closable="false" show-icon title="金额、日期、归属不可直接修改" description="这里只能改凭证号和备注。金额、日期、归属记错了，请关掉后点「更正」。" class="mold-dialog-alert" />
 			<el-form label-position="top" @submit.prevent="submitEdit">
 				<el-form-item label="凭证号">
 					<el-input v-model="editForm.voucherNo" maxlength="64" />
@@ -348,13 +348,13 @@
 				type="warning"
 				:closable="false"
 				show-icon
-				:title="reasonKind === 'void' ? '作废保留原记录，审计可查' : '冲正生成一条反向流水，原流水保留'"
-				:description="reasonKind === 'void' ? '已对账流水需先取消对账。' : '冲正金额与原流水相同、方向相反，净额归零。'"
+				:title="reasonKind === 'void' ? '作废后这笔不再计入报表，原记录保留，可在审计日志里查到' : '冲正会自动生成一笔金额相同、方向相反的流水，两笔相抵为 0；原流水保留'"
+				:description="reasonKind === 'void' ? '已对账的流水要先取消对账才能作废。' : '适合钱已经实际收付、需要退回或抵消的情况；只是记错了请用「更正」。'"
 				class="mold-dialog-alert"
 			/>
 			<el-form label-position="top" @submit.prevent="submitReason">
 				<el-form-item label="原因（必填）">
-					<el-input v-model="reasonText" type="textarea" :rows="3" maxlength="2000" show-word-limit placeholder="写清原因，会写入审计" />
+					<el-input v-model="reasonText" type="textarea" :rows="3" maxlength="2000" show-word-limit placeholder="写清原因，之后可在审计日志里查到" />
 				</el-form-item>
 				<div class="mold-dialog-actions">
 					<el-button @click="reasonVisible = false">取消</el-button>
@@ -372,7 +372,7 @@
 				<el-form-item label="对账参考号（可选）">
 					<el-input v-model="reconcileRef" maxlength="128" placeholder="银行流水号 / 对账单编号" />
 				</el-form-item>
-				<p class="mold-form-hint">标记后流水不可编辑或作废，需先取消对账。</p>
+				<p class="mold-form-hint">对账后这笔流水不能再编辑或作废；如需修改，先取消对账。</p>
 				<div class="mold-dialog-actions">
 					<el-button @click="reconcileVisible = false">取消</el-button>
 					<el-button type="primary" native-type="submit" :loading="acting">确认对账</el-button>
@@ -384,7 +384,7 @@
 
 <script setup lang="ts" name="moldCash">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { ArrowDown, ArrowLeft, ArrowRight, Document, Plus, Refresh, RefreshLeft, Search } from '@element-plus/icons-vue';
 import StatePanel from '/@/components/mold/StatePanel.vue';
@@ -415,6 +415,7 @@ import { formatDate } from '/@/utils/moldFormat';
 import { beginIdempotentAction, finishIdempotentAction, stableHash } from '/@/utils/idempotency';
 
 const router = useRouter();
+const route = useRoute();
 const { can, ensureLoaded, unreachable } = useMoldPermissions();
 
 const canCreate = computed(() => can('mold:cash:create'));
@@ -766,6 +767,12 @@ onMounted(async () => {
 	}
 	list.load(true);
 	loadLookups();
+	// 首页快捷入口「记一笔流水」：带 ?create=1 进来时直接打开新建弹窗
+	if (route.query.create === '1') {
+		if (canCreate.value) formVisible.value = true;
+		const { create, ...rest } = route.query;
+		router.replace({ query: rest });
+	}
 });
 
 /* SSE：流水/往来/采购变更只刷当前 Tab 的列表，报表 Tab 首次进入时再拉 */

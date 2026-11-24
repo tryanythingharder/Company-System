@@ -7,7 +7,7 @@
 						<div>
 							<h1>审计日志</h1>
 							<p>
-								业务审计只追加不修改；每条含操作人、请求 ID 与变更前后快照，用于追责与对账。
+								系统里每一次新增、修改、删除都会记在这里：谁、什么时候、改了什么。记录只增不改，可用于核对和追责。
 								<span v-if="state !== 'forbidden' && state !== 'error'" class="mold-page-total">
 									共 {{ state === 'loading' ? '—' : total }} 条
 								</span>
@@ -24,13 +24,13 @@
 					<div class="mold-filter-bar" :class="{ 'is-open': filterOpen }">
 						<el-form :inline="true" @submit.prevent="onQuery">
 							<el-form-item label="对象类型">
-								<el-select v-model="filters.entityType" placeholder="全部" clearable filterable allow-create style="width: 160px">
-									<el-option v-for="t in ENTITY_TYPES" :key="t" :label="t" :value="t" />
+								<el-select v-model="filters.entityType" placeholder="全部" clearable filterable style="width: 160px" @change="onQuery">
+									<el-option v-for="t in ENTITY_TYPES" :key="t" :label="entityLabel(t)" :value="t" />
 								</el-select>
 							</el-form-item>
 							<el-form-item label="动作">
-								<el-select v-model="filters.action" placeholder="全部" clearable filterable allow-create style="width: 140px">
-									<el-option v-for="a in ACTIONS" :key="a" :label="a" :value="a" />
+								<el-select v-model="filters.action" placeholder="全部" clearable filterable style="width: 140px" @change="onQuery">
+									<el-option v-for="a in ACTIONS" :key="a" :label="actionLabel(a)" :value="a" />
 								</el-select>
 							</el-form-item>
 							<el-form-item label="时间">
@@ -40,15 +40,17 @@
 									value-format="YYYY-MM-DD"
 									range-separator="至"
 									start-placeholder="开始"
-									end-placeholder="结束"
+									end-placeholder="结束" @change="onQuery"
 									style="width: 240px"
 								/>
 							</el-form-item>
-							<el-form-item label="对象 ID">
-								<el-input v-model="filters.entityId" placeholder="完整 UUID" clearable style="width: 240px" />
+							<el-form-item label="对象编号">
+								<el-input v-model="filters.entityId" placeholder="粘贴完整编号，可在详情里复制" clearable style="width: 240px" />
 							</el-form-item>
-							<el-form-item label="操作人 ID">
-								<el-input v-model="filters.actorId" placeholder="完整 UUID" clearable style="width: 240px" />
+							<el-form-item label="操作人">
+								<el-select v-model="filters.actorId" placeholder="全部" clearable filterable style="width: 180px" @change="onQuery">
+									<el-option v-for="(name, id) in actorNames" :key="id" :label="name" :value="id" />
+								</el-select>
 							</el-form-item>
 							<el-form-item>
 								<el-button type="primary" :icon="Search" @click="onQuery">查询</el-button>
@@ -112,19 +114,19 @@
 							<el-table-column prop="entityType" label="对象类型" width="140" sortable="custom">
 								<template #default="{ row }">
 									<span class="cell-label">对象类型</span>
-									<div class="cell-value"><el-tag size="small" effect="plain">{{ row.entityType }}</el-tag></div>
+									<div class="cell-value"><el-tag size="small" effect="plain">{{ entityLabel(row.entityType) }}</el-tag></div>
 								</template>
 							</el-table-column>
-							<el-table-column label="对象 ID" min-width="140">
+							<el-table-column label="对象编号" min-width="140">
 								<template #default="{ row }">
-									<span class="cell-label">对象 ID</span>
+									<span class="cell-label">对象编号</span>
 									<div class="cell-value mold-audit-id" :title="row.entityId">{{ shortId(row.entityId) }}</div>
 								</template>
 							</el-table-column>
 							<el-table-column prop="action" label="动作" width="130" sortable="custom">
 								<template #default="{ row }">
 									<span class="cell-label">动作</span>
-									<div class="cell-value">{{ row.action }}</div>
+									<div class="cell-value">{{ actionLabel(row.action) }}</div>
 								</template>
 							</el-table-column>
 							<el-table-column label="操作人" width="150">
@@ -133,15 +135,9 @@
 									<div class="cell-value">{{ row.actorId ? actorName(row.actorId) : '—' }}</div>
 								</template>
 							</el-table-column>
-							<el-table-column label="请求 ID" min-width="140">
-								<template #default="{ row }">
-									<span class="cell-label">请求 ID</span>
-									<div class="cell-value mold-audit-id" :title="row.requestId || ''">{{ row.requestId || '—' }}</div>
-								</template>
-							</el-table-column>
 							<el-table-column label="操作" width="80" align="right" class-name="col-act">
 								<template #default="{ row }">
-									<el-button link type="primary" size="small" @click.stop="openDetail(row)">快照</el-button>
+									<el-button link type="primary" size="small" @click.stop="openDetail(row)">查看</el-button>
 								</template>
 							</el-table-column>
 						</el-table>
@@ -174,16 +170,16 @@
 			<div class="mold-audit-detail">
 				<div class="mold-audit-detail-head">
 					<div>
-						<div class="mold-audit-detail-kicker">{{ detailRow?.entityType }} · {{ detailRow?.action }}</div>
+						<div class="mold-audit-detail-kicker">{{ entityLabel(detailRow?.entityType) }} · {{ actionLabel(detailRow?.action) }}</div>
 						<h2>{{ formatDateTime(detailRow?.createdAt) }}</h2>
 					</div>
 					<el-button text @click="detailVisible = false">关闭</el-button>
 				</div>
 				<dl v-if="detailRow" class="mold-kv mold-kv-tight">
-					<div><dt>对象 ID</dt><dd class="mold-audit-id">{{ detailRow.entityId }}</dd></div>
-					<div><dt>操作人</dt><dd>{{ detailRow.actorId || '—' }}</dd></div>
-					<div><dt>请求 ID</dt><dd class="mold-audit-id">{{ detailRow.requestId || '—' }}</dd></div>
-					<div><dt>记录 ID</dt><dd>{{ detailRow.id }}</dd></div>
+					<div><dt>对象编号</dt><dd class="mold-audit-id">{{ detailRow.entityId }}</dd></div>
+					<div><dt>操作人</dt><dd>{{ detailRow.actorId ? actorName(detailRow.actorId) : '—' }}</dd></div>
+					<div><dt>追踪号（报障时提供）</dt><dd class="mold-audit-id">{{ detailRow.requestId || '—' }}</dd></div>
+					<div><dt>记录编号</dt><dd>{{ detailRow.id }}</dd></div>
 					<div v-if="detailRow.ip"><dt>来源 IP</dt><dd class="mold-audit-id">{{ detailRow.ip }}</dd></div>
 					<div v-if="detailRow.userAgent"><dt>客户端</dt><dd class="mold-audit-id">{{ detailRow.userAgent }}</dd></div>
 				</dl>
@@ -194,11 +190,11 @@
 					<el-tab-pane label="变更后" name="after">
 						<pre class="mold-audit-json">{{ pretty(detailRow.afterData) }}</pre>
 					</el-tab-pane>
-					<el-tab-pane label="差异" name="diff">
+					<el-tab-pane label="改了哪些" name="diff">
 						<pre class="mold-audit-json">{{ pretty(detailRow.diff) }}</pre>
 					</el-tab-pane>
 				</el-tabs>
-				<p class="mold-form-hint">快照可能包含业务字段；页面不显示口令、密钥等敏感信息（服务端已脱敏）。</p>
+				<p class="mold-form-hint">这里展示修改前后的字段；密码、密钥等敏感信息不会记录。</p>
 			</div>
 		</el-drawer>
 	</div>
@@ -236,6 +232,35 @@ const ACTIONS = [
 	'DOWNLOAD',
 ];
 
+const ENTITY_LABEL: Record<string, string> = {
+	PROJECT: '项目',
+	STAGE: '阶段',
+	ISSUE: '异常',
+	PURCHASE: '采购单',
+	PURCHASE_RECEIPT: '采购到货',
+	PURCHASE_INVOICE: '采购发票',
+	CASH_ENTRY: '收支流水',
+	COUNTERPARTY: '往来单位',
+	ATTACHMENT: '附件',
+	USER: '账号',
+};
+const ACTION_LABEL: Record<string, string> = {
+	CREATE: '新建',
+	UPDATE: '修改',
+	SET_ROLES: '分配角色',
+	RESET_PASSWORD: '重置密码',
+	CONFIRM: '确认',
+	VOID: '作废',
+	REVERSE: '冲正',
+	RECONCILE: '对账',
+	UNRECONCILE: '取消对账',
+	COMPLETE: '完成',
+	TRANSITION: '状态变更',
+	DELETE: '删除',
+	DOWNLOAD: '下载',
+};
+const entityLabel = (code?: string | null) => (code ? ENTITY_LABEL[code] || '其他' : '—');
+const actionLabel = (code?: string | null) => (code ? ACTION_LABEL[code] || '其他操作' : '—');
 const filterOpen = ref(false);
 const tableMaxHeight = computed(() => (window.innerWidth <= 900 ? undefined : 'calc(100vh - 320px)'));
 const drawerSize = computed(() => (window.innerWidth <= 900 ? '100%' : '620px'));
@@ -264,7 +289,7 @@ const list = useMoldList<MoldAuditRow>({
 const { rows, total, pageNum, pageSize, pageCount, state, loading, errorInfo, errorAction, hasFilters } = list;
 
 const actorNames = ref<Record<string, string>>({});
-const actorName = (id: string) => actorNames.value[id] || shortId(id);
+const actorName = (id: string) => actorNames.value[id] || '（账号已停用或不可见）';
 const shortId = (id?: string | null) => (id ? (id.length > 14 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id) : '—');
 
 function onQuery() {

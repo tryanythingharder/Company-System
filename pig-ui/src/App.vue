@@ -68,6 +68,13 @@ onMounted(() => {
 		mittBus.on('openSettingsDrawer', () => {
 			settingsRef.value.openDrawer();
 		});
+		// 界面改版后让浏览器里缓存的旧布局失效一次（否则仍是顶部分割菜单 + 蓝顶栏）
+		const UI_VERSION = 'mold-ui-2026-11-24';
+		if (Local.get('moldUiVersion') !== UI_VERSION) {
+			Local.remove('themeConfig');
+			Local.remove('themeConfigStyle');
+			Local.set('moldUiVersion', UI_VERSION);
+		}
 		// 获取缓存中的布局配置
 		if (Local.get('themeConfig')) {
 			storesThemeConfig.setThemeConfig({ themeConfig: Local.get('themeConfig') });

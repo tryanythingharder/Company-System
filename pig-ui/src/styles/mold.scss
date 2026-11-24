@@ -895,3 +895,246 @@ textarea:focus-visible,
 	line-height: 18px;
 	color: var(--el-text-color-secondary);
 }
+
+/* ==== 视觉统一（2026-11-24 改版） ==== */
+/* 设计基调：浅灰底 + 白卡片，信息靠层级而不是色块；主色只用于可点击元素和关键状态。 */
+:root {
+	--mold-bg-page: #f5f7fa;
+	--mold-border: #e5e8ef;
+	--mold-text-strong: #1f2937;
+	--mold-text: #374151;
+	--mold-text-muted: #6b7280;
+	--mold-radius-card: 10px;
+	--mold-shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04);
+	--mold-shadow-hover: 0 4px 12px rgba(16, 24, 40, 0.08);
+	--el-border-radius-base: 6px;
+	--el-font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+}
+html:not(.dark) {
+	--next-bg-main-color: var(--mold-bg-page);
+}
+
+/* 页面外壳：主区域是浅灰底，页面本身不再套一层带阴影的大白框，卡片自己承担分组 */
+html:not(.dark) .layout-padding-view:has(> .page-scroll > .mold-page) {
+	background: transparent;
+	box-shadow: none !important;
+}
+.page-scroll > .mold-page {
+	max-width: 1680px;
+}
+
+/* 页头：标题更醒目，说明文字收敛 */
+.mold-page-head h1 {
+	font-size: 20px;
+	line-height: 28px;
+	color: var(--mold-text-strong);
+	letter-spacing: 0.2px;
+}
+.mold-page-head p {
+	font-size: 13px;
+	line-height: 20px;
+	color: var(--mold-text-muted);
+}
+
+/* 统计卡：左侧色条表示状态，数字加大 */
+.mold-stat {
+	border-color: var(--mold-border);
+	border-radius: var(--mold-radius-card);
+	box-shadow: var(--mold-shadow-card);
+	padding: 16px 18px;
+	margin-bottom: 16px;
+	position: relative;
+	overflow: hidden;
+	&::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 3px;
+		background: var(--el-color-primary-light-5);
+	}
+	&:has(.is-ok)::before {
+		background: var(--el-color-success);
+	}
+	&:has(.is-bad)::before {
+		background: var(--el-color-danger);
+	}
+}
+.mold-stat-label {
+	color: var(--mold-text-muted);
+}
+.mold-stat-value {
+	font-size: 28px;
+}
+
+/* 卡片：统一圆角、边框、轻阴影 */
+.mold-card,
+.mold-tabs-card,
+.mold-detail-card {
+	border-color: var(--mold-border) !important;
+	border-radius: var(--mold-radius-card) !important;
+	box-shadow: var(--mold-shadow-card);
+	background: var(--el-bg-color);
+}
+.mold-card-title {
+	font-size: 15px;
+	color: var(--mold-text-strong);
+}
+
+/* 筛选区：放进一张卡片里，和表格分开 */
+.mold-filter-bar {
+	background: var(--el-bg-color);
+	border: 1px solid var(--mold-border);
+	border-radius: var(--mold-radius-card);
+	box-shadow: var(--mold-shadow-card);
+	padding: 14px 16px 2px;
+	.el-form-item__label {
+		color: var(--mold-text-muted);
+	}
+}
+
+/* 表格：表头浅灰底，行悬停高亮，外框圆角 */
+.mold-list {
+	background: var(--el-bg-color);
+	border: 1px solid var(--mold-border);
+	border-radius: var(--mold-radius-card);
+	box-shadow: var(--mold-shadow-card);
+	overflow: hidden;
+	.el-table {
+		--el-table-border-color: #eef0f4;
+		--el-table-header-bg-color: #f8f9fb;
+		--el-table-row-hover-bg-color: #f4f7ff;
+		--el-table-header-text-color: var(--mold-text-muted);
+	}
+	th.el-table__cell {
+		background: #f8f9fb !important;
+		font-weight: 500;
+	}
+	.el-table__inner-wrapper::before {
+		display: none;
+	}
+	.el-table--border .el-table__inner-wrapper::after,
+	.el-table--border::after,
+	.el-table--border::before {
+		display: none;
+	}
+}
+
+/* 空状态与无权限面板：放在卡片里，留足呼吸感 */
+.mold-state {
+	background: var(--el-bg-color);
+	border: 1px dashed var(--mold-border);
+	border-radius: var(--mold-radius-card);
+}
+
+/* 标签：更扁更柔和 */
+.el-tag {
+	border-radius: 4px;
+	font-weight: 500;
+}
+
+/* 按钮：主按钮轻微投影，次按钮白底 */
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain) {
+	box-shadow: 0 1px 2px rgba(46, 92, 246, 0.25);
+}
+
+/* 弹窗：圆角、标题加粗、底部操作区留白 */
+.el-dialog {
+	border-radius: 12px !important;
+	.el-dialog__title {
+		font-weight: 600;
+		color: var(--mold-text-strong);
+	}
+}
+.el-message-box {
+	border-radius: 12px !important;
+}
+
+/* 左侧菜单：选中项左侧色条 */
+.layout-aside .el-menu-item.is-active::before {
+	content: '';
+	position: absolute;
+	left: 0;
+	top: 12px;
+	bottom: 12px;
+	width: 3px;
+	border-radius: 0 3px 3px 0;
+	background: var(--el-color-primary);
+}
+.layout-aside .el-menu-item,
+.layout-aside .el-sub-menu__title {
+	height: 44px !important;
+	line-height: 44px !important;
+	margin: 2px 8px;
+}
+
+/* 标签页栏：白底细线，与顶栏连成一体 */
+.layout-navbars-tagsview {
+	background: var(--el-bg-color) !important;
+	border-bottom: 1px solid var(--el-border-color-lighter) !important;
+}
+
+/* 统计卡可点击（公司进度） */
+.mold-stat.is-clickable {
+	cursor: pointer;
+	transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+	&:hover {
+		box-shadow: var(--mold-shadow-hover);
+		border-color: var(--el-color-primary-light-7) !important;
+	}
+	&:focus-visible {
+		outline: 2px solid var(--el-color-primary);
+		outline-offset: 2px;
+	}
+	&.is-current {
+		border-color: var(--el-color-primary) !important;
+		background: var(--el-color-primary-light-9);
+		&::before {
+			background: var(--el-color-primary);
+		}
+	}
+	&:has(.is-warn)::before {
+		background: var(--el-color-warning);
+	}
+}
+.mold-stat-value.is-warn {
+	color: var(--el-color-warning-dark-2);
+}
+
+/* 阶段逾期提示（我的工作） */
+.mold-work-overdue {
+	padding: 0 6px;
+	border-radius: 4px;
+	font-size: 12px;
+	line-height: 20px;
+	color: var(--el-color-danger);
+	background: var(--el-color-danger-light-9);
+}
+
+/* 危险操作菜单项 */
+.el-dropdown-menu__item.mold-menu-danger:not(.is-disabled) {
+	color: var(--el-color-danger);
+	&:hover,
+	&:focus {
+		color: var(--el-color-danger);
+		background: var(--el-color-danger-light-9);
+	}
+}
+
+/* 工具栏说明文字：电脑靠右，手机换行占满一行（不随 .mold-toolbar-right 隐藏） */
+.mold-toolbar-note {
+	margin-left: auto;
+}
+@media (max-width: 900px) {
+	.mold-toolbar-note {
+		margin-left: 0;
+		flex-basis: 100%;
+	}
+}
+
+/* 说明文字对比度（浅色主题）：灰字在白底和浅灰底上都 ≥ 4.5:1 */
+html:not(.dark) {
+	--el-text-color-secondary: #63676e;
+	--mold-text-muted: #63676e;
+}

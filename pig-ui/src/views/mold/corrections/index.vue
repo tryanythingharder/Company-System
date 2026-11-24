@@ -7,7 +7,7 @@
 						<div>
 							<h1>更正记录</h1>
 							<p>
-								录错不物理改：作废原流水并重录（替换）或生成反向流水；每次更正先预览影响，再提交。
+								记错的流水在这里更正：原流水作废并保留，按新填的内容生成一笔替换流水；什么都不改就只作废。提交前先预览对报表的影响。
 							</p>
 						</div>
 						<div class="mold-page-head-actions">
@@ -104,7 +104,7 @@
 									<div class="mold-card mold-corr-summary">
 										<div class="mold-card-title">
 											<span>2. 当前流水</span>
-											<span class="mold-card-note">v{{ detail.version }} · {{ detail.code }}</span>
+											<span class="mold-card-note">{{ detail.code }}</span>
 										</div>
 										<dl class="mold-kv mold-kv-tight">
 											<div><dt>类别 / 方向</dt><dd>{{ CATEGORY_LABEL[detail.category] || detail.category }} · {{ detail.direction === 'IN' ? '收入' : '支出' }}</dd></div>
@@ -121,7 +121,7 @@
 										type="info"
 										:closable="false"
 										show-icon
-										title="该流水已作废，不能再次更正"
+										title="这笔流水已作废或已被更正过，不能再更正"
 										class="mold-dialog-alert"
 									/>
 									<el-alert
@@ -130,37 +130,37 @@
 										:closable="false"
 										show-icon
 										title="该流水已对账"
-										description="更正前需先在财务收支页取消对账，服务端会拒绝已对账流水的更正。"
+										description="已对账的流水不能直接更正，请先到财务收支页取消对账。"
 										class="mold-dialog-alert"
 									/>
 
 									<div class="mold-card">
 										<div class="mold-card-title">
 											<span>3. 更正方式</span>
-											<span class="mold-card-note">留空替换字段 = 仅作废重录</span>
+											<span class="mold-card-note">下面各项都不填，就只作废原流水</span>
 										</div>
 										<el-form label-position="top" @submit.prevent="submit">
 											<el-form-item label="更正原因（必填）">
-												<el-input v-model="form.reason" type="textarea" :rows="2" maxlength="2000" show-word-limit placeholder="写清为什么更正，会写入审计与更正链" />
+												<el-input v-model="form.reason" type="textarea" :rows="2" maxlength="2000" show-word-limit placeholder="写清为什么更正，之后可在审计日志里查到" />
 											</el-form-item>
 											<el-checkbox v-model="form.replace" :disabled="!canApply">替换为新流水（金额 / 日期 / 方式可改）</el-checkbox>
 											<div v-if="form.replace" class="mold-form-grid mold-corr-replace">
 												<el-form-item label="新金额">
-													<el-input v-model="form.amount" inputmode="decimal" placeholder="留空 = 沿用原金额" />
+													<el-input v-model="form.amount" inputmode="decimal" placeholder="不填则沿用原金额" />
 												</el-form-item>
 												<el-form-item label="新发生日期">
-													<el-date-picker v-model="form.occurredOn" type="date" value-format="YYYY-MM-DD" style="width: 100%" placeholder="留空 = 沿用原日期" />
+													<el-date-picker v-model="form.occurredOn" type="date" value-format="YYYY-MM-DD" style="width: 100%" placeholder="不填则沿用原日期" />
 												</el-form-item>
 												<el-form-item label="新方式">
-													<el-select v-model="form.method" clearable placeholder="留空 = 沿用" style="width: 100%">
+													<el-select v-model="form.method" clearable placeholder="不填则沿用原值" style="width: 100%">
 														<el-option v-for="(label, value) in METHOD_LABEL" :key="value" :label="label" :value="value" />
 													</el-select>
 												</el-form-item>
 												<el-form-item label="新凭证号">
-													<el-input v-model="form.voucherNo" maxlength="64" placeholder="留空 = 沿用" />
+													<el-input v-model="form.voucherNo" maxlength="64" placeholder="不填则沿用原值" />
 												</el-form-item>
 												<el-form-item label="新备注">
-													<el-input v-model="form.note" maxlength="2000" placeholder="留空 = 沿用" />
+													<el-input v-model="form.note" maxlength="2000" placeholder="不填则沿用原值" />
 												</el-form-item>
 											</div>
 											<div class="mold-dialog-actions">
@@ -177,7 +177,7 @@
 												</el-button>
 											</div>
 										</el-form>
-										<p v-if="!canApply" class="mold-form-hint">当前账号只有预览权限（mold:correction:preview），提交需要 mold:correction:apply。</p>
+										<p v-if="!canApply" class="mold-form-hint">你的账号只能预览，不能提交更正；需要提交请联系财务或老板。</p>
 									</div>
 
 									<div v-if="actionError" class="mold-corr-error" role="alert">{{ actionError }}</div>
@@ -210,7 +210,7 @@
 											:closable="false"
 											show-icon
 											title="更正后该采购单将超付"
-											description="服务端可能拒绝提交；请先处理采购付款或改为不替换金额。"
+											description="提交可能会被拒绝：请先处理相关的采购付款，或者改为不替换金额。"
 											class="mold-corr-purchase-alert"
 										/>
 										<p v-if="preview.purchase" class="mold-inline-note">
@@ -221,8 +221,8 @@
 									<!-- 更正链 -->
 									<div class="mold-card">
 										<div class="mold-card-title">
-											<span>更正链</span>
-											<span class="mold-card-note">{{ detail.correctionChain?.truncated ? '链路过长，仅显示相邻节点' : `${detail.correctionChain?.nodes?.length || 0} 个节点` }}</span>
+											<span>更正历史</span>
+											<span class="mold-card-note">{{ detail.correctionChain?.truncated ? '记录较多，只显示前后相邻的几笔' : `共 ${detail.correctionChain?.nodes?.length || 0} 笔` }}</span>
 										</div>
 										<ol v-if="detail.correctionChain?.nodes?.length" class="mold-chain">
 											<li v-for="node in detail.correctionChain.nodes" :key="node.id" class="mold-chain-item" :class="{ 'is-current': node.id === detail.id }">

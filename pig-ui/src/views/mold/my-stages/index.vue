@@ -7,7 +7,7 @@
 						<div>
 							<h1>我的工作</h1>
 							<p>
-								我是责任人 / 成员的阶段，按项目分组；只能推进自己被指派的阶段。
+								指派给你的阶段，按项目分组；可以在这里开始、完成或标记受阻。
 								<span v-if="state !== 'forbidden' && state !== 'error'" class="mold-page-total">
 									共 {{ state === 'loading' ? '—' : total }} 个阶段
 								</span>
@@ -23,9 +23,19 @@
 
 					<el-row v-if="state !== 'forbidden' && state !== 'error'" :gutter="16">
 						<el-col v-for="s in stats" :key="s.key" :xs="12" :sm="12" :md="6">
-							<div class="mold-stat">
+							<div
+								class="mold-stat is-clickable"
+								:class="{ 'is-current': filters.status === s.status }"
+								role="button"
+								tabindex="0"
+								:aria-pressed="filters.status === s.status"
+								:aria-label="`只看${s.label}的阶段`"
+								@click="onStatClick(s.status)"
+								@keydown.enter.prevent="onStatClick(s.status)"
+								@keydown.space.prevent="onStatClick(s.status)"
+							>
 								<div class="mold-stat-label">{{ s.label }}</div>
-								<div class="mold-stat-value" :class="s.tone">{{ s.value }}<span class="mold-stat-unit">个</span></div>
+								<div class="mold-stat-value" :class="s.tone">{{ s.value ?? '—' }}<span class="mold-stat-unit">个</span></div>
 								<div class="mold-stat-foot">{{ s.foot }}</div>
 							</div>
 						</el-col>
@@ -34,7 +44,7 @@
 					<div v-if="state !== 'forbidden' && state !== 'error'" class="mold-filter-bar" :class="{ 'is-open': filterOpen }">
 						<el-form :inline="true" @submit.prevent="onQuery">
 							<el-form-item label="阶段状态">
-								<el-select v-model="filters.status" placeholder="全部" clearable style="width: 140px">
+								<el-select v-model="filters.status" placeholder="全部" clearable style="width: 140px" @change="onQuery">
 									<el-option label="未开始" value="NOT_STARTED" />
 									<el-option label="进行中" value="IN_PROGRESS" />
 									<el-option label="受阻" value="BLOCKED" />
@@ -71,7 +81,7 @@
 					<StatePanel
 						v-else-if="state === 'empty'"
 						kind="empty"
-						title="暂时没有分配给你的阶段"
+						:title="hasFilters ? '没有符合条件的阶段' : '暂时没有分配给你的阶段'"
 						:description="hasFilters ? '当前筛选下没有阶段，可重置后重试。' : '等项目负责人把阶段责任人指派给你后，这里会显示可推进的工作。'"
 						:action-text="hasFilters ? '重置筛选' : ''"
 						@action="onReset"
@@ -102,6 +112,7 @@
 										</div>
 										<div class="mold-work-meta">
 											<span>计划 {{ formatDate(stage.plannedStart) }} ~ {{ formatDate(stage.plannedEnd) }}</span>
+											<span v-if="stageOverdueDays(stage) > 0" class="mold-work-overdue">已逾期 {{ stageOverdueDays(stage) }} 天</span>
 											<span v-if="stage.actualEnd">完成于 {{ formatDate(stage.actualEnd) }}</span>
 											<span v-if="stage.note" class="mold-work-note" :title="stage.note">{{ stage.note }}</span>
 										</div>
@@ -171,7 +182,7 @@
 						:placeholder="pendingAction?.reasonRequired ? '说明受阻原因，便于项目负责人处理' : '可选，写入阶段历史'"
 					/>
 				</el-form-item>
-				<p class="mold-form-hint">提交后写入阶段时间线并产生事件；同一次提交带幂等键，重复点击不会重复推进。</p>
+				<p class="mold-form-hint">提交后会记入阶段历史，项目负责人能实时看到。网络卡顿时重复点击也只会算一次。</p>
 				<div class="mold-dialog-actions">
 					<el-button @click="transitionVisible = false">取消</el-button>
 					<el-button
@@ -201,7 +212,7 @@ import { fetchMyStages, transitionStage, type MoldStageAction, type MoldStageRow
 import { debounceRefresh, useMoldEvent } from '/@/api/mold/events';
 import { describeMoldError } from '/@/api/mold/errors';
 import { useMoldList } from '/@/utils/moldList';
-import { formatDate } from '/@/utils/moldFormat';
+import { formatDate, todayStamp } from '/@/utils/moldFormat';
 import { beginIdempotentAction, finishIdempotentAction, stableHash } from '/@/utils/idempotency';
 
 const router = useRouter();
@@ -219,15 +230,37 @@ const list = useMoldList<MoldStageRow>({
 });
 const { rows, total, pageNum, pageSize, pageCount, state, loading, errorInfo, errorAction, hasFilters } = list;
 
-const stats = computed(() => {
-	const page = rows.value;
-	return [
-		{ key: 'total', label: '本页阶段', value: page.length, foot: `第 ${pageNum.value} 页`, tone: '' },
-		{ key: 'doing', label: '进行中', value: page.filter((s) => s.status === 'IN_PROGRESS').length, foot: '可标记完成或受阻', tone: '' },
-		{ key: 'blocked', label: '受阻', value: page.filter((s) => s.status === 'BLOCKED').length, foot: '需要处理', tone: 'is-bad' },
-		{ key: 'done', label: '已完成', value: page.filter((s) => s.status === 'COMPLETED').length, foot: '本页', tone: 'is-ok' },
-	];
-});
+// 按状态统计全部指派给我的阶段（不受翻页和状态筛选影响）；点卡片 = 按该状态筛选，再点一次取消
+const statCounts = reactive<Record<string, number | null>>({ all: null, IN_PROGRESS: null, BLOCKED: null, COMPLETED: null });
+let statSeq = 0;
+async function loadStats() {
+	const seq = ++statSeq;
+	const keys = ['all', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED'];
+	const res = await Promise.allSettled(keys.map((k) => fetchMyStages({ pageNum: 1, pageSize: 1, status: k === 'all' ? undefined : k } as any)));
+	if (seq !== statSeq) return;
+	keys.forEach((k, i) => {
+		const r = res[i];
+		statCounts[k] = r.status === 'fulfilled' ? r.value.total : null;
+	});
+}
+const stats = computed(() => [
+	{ key: 'total', status: '', label: '全部', value: statCounts.all, foot: '指派给你的阶段', tone: '' },
+	{ key: 'doing', status: 'IN_PROGRESS', label: '进行中', value: statCounts.IN_PROGRESS, foot: '点击只看进行中', tone: '' },
+	{ key: 'blocked', status: 'BLOCKED', label: '受阻', value: statCounts.BLOCKED, foot: '点击只看受阻', tone: 'is-bad' },
+	{ key: 'done', status: 'COMPLETED', label: '已完成', value: statCounts.COMPLETED, foot: '点击只看已完成', tone: 'is-ok' },
+]);
+function onStatClick(status: string) {
+	filters.status = filters.status === status ? '' : status;
+	onQuery();
+}
+
+/** 计划结束日已过、尚未完成的阶段：返回逾期天数，否则 0 */
+function stageOverdueDays(stage: MoldStageRow) {
+	if (!stage.plannedEnd || stage.status === 'COMPLETED') return 0;
+	const day = (x: string) => new Date(String(x).slice(0, 10) + 'T00:00:00').getTime();
+	const diff = Math.round((day(todayStamp()) - day(String(stage.plannedEnd))) / 86400000);
+	return Number.isNaN(diff) || diff <= 0 ? 0 : diff;
+}
 
 const projectMap = computed(() => {
 	const map = new Map<string, MoldProjectRow>();
@@ -299,7 +332,7 @@ async function submitTransition() {
 		finishIdempotentAction(scope);
 		ElMessage.success(`已${actionText(pendingAction.value.action)}`);
 		transitionVisible.value = false;
-		list.reload();
+		reload();
 	} catch (err: any) {
 		if (err instanceof MoldApiError && err.fieldErrors?.note) transitionFieldError.value = err.fieldErrors.note;
 		transitionError.value = describeMoldError(err, '推进失败，请重试').message;
@@ -320,10 +353,16 @@ async function loadProjects() {
 
 function onQuery() {
 	list.query();
+	loadStats();
 }
 function onReset() {
 	filters.status = '';
 	list.reset();
+	loadStats();
+}
+function reload() {
+	list.reload();
+	loadStats();
 }
 function onErrorAction() {
 	if (errorAction.value === 'login') router.push('/login');
@@ -346,10 +385,11 @@ onMounted(() => {
 	ensureLoaded();
 	loadProjects();
 	list.load(true);
+	loadStats();
 });
 
 /* SSE：阶段状态变化只刷「我的工作」列表 */
-const refreshMyStagesOnEvent = debounceRefresh(() => list.reload(), 700);
+const refreshMyStagesOnEvent = debounceRefresh(() => reload(), 700);
 useMoldEvent(['stage.created', 'stage.updated', 'stage.transitioned', 'project.members.updated'], refreshMyStagesOnEvent);
 </script>
 

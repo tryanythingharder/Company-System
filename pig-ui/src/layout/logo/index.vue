@@ -24,7 +24,9 @@ const setShowLogo = computed(() => {
 
 const setFontColor = computed(() => {
   const {layout} = themeConfig.value;
-  return layout === 'classic' || layout === 'transverse' ? `var(--next-bg-topBarColor)` : 'var(--el-color-primary)';
+  // 顶栏是浅色时 Logo 用主色，深色顶栏才用顶栏文字色
+  const light = ['#FFFFFF', '#FFF', '#fff', '#ffffff'].includes(themeConfig.value.topBar);
+  return (layout === 'classic' || layout === 'transverse') && !light ? `var(--next-bg-topBarColor)` : 'var(--el-color-primary)';
 });
 
 const onThemeConfigChange = () => {

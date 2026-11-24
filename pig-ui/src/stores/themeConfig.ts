@@ -23,9 +23,9 @@ export const useThemeConfig = defineStore('themeConfig', {
 			 * 顶栏设置
 			 */
 			// 默认顶栏导航背景颜色
-			topBar: '#2E5CF6',
+			topBar: '#FFFFFF',
 			// 默认顶栏导航字体颜色
-			topBarColor: '#FFFFFF',
+			topBarColor: '#1F2937',
 			// 是否开启顶栏背景颜色渐变
 			isTopBarColorGradual: false,
 
@@ -35,7 +35,7 @@ export const useThemeConfig = defineStore('themeConfig', {
 			// 默认菜单导航背景颜色
 			menuBar: '#FFFFFF',
 			// 默认菜单导航字体颜色
-			menuBarColor: '#475569',
+			menuBarColor: '#334155',
 			// 默认菜单高亮背景色
 			menuBarActiveColor: '#eff6ff',
 			// 是否开启菜单背景颜色渐变
@@ -65,7 +65,7 @@ export const useThemeConfig = defineStore('themeConfig', {
 			// 初始化变量，用于更新菜单 el-scrollbar 的高度，请勿删除
 			isFixedHeaderChange: false,
 			// 是否开启经典布局分割菜单（仅经典布局生效）
-			isClassicSplitMenu: true,
+			isClassicSplitMenu: false,
 			// 是否开启自动锁屏
 			isLockScreen: false,
 			// 开启自动锁屏倒计时(s/秒)
@@ -93,7 +93,7 @@ export const useThemeConfig = defineStore('themeConfig', {
 			// 是否开启 TagsView 共用
 			isShareTagsView: false,
 			// 是否开启 Footer 底部版权信息
-			isFooter: true,
+			isFooter: false,
 			// 是否开启灰色模式
 			isGrayscale: false,
 			// 是否开启色弱模式

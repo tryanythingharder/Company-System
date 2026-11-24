@@ -25,7 +25,7 @@
 					<p v-if="e.reason" class="mold-timeline-reason">{{ e.reason }}</p>
 					<div class="mold-timeline-meta">
 						<span v-if="e.actorId">操作人：{{ actorName(e.actorId) }}</span>
-						<span v-if="e.issueId">关联异常：{{ e.issueId.slice(0, 8) }}</span>
+						<span v-if="e.issueId">关联了一条异常记录</span>
 					</div>
 				</div>
 			</el-timeline-item>
@@ -46,7 +46,7 @@ const props = withDefaults(
 		/** actorId -> 显示名；缺省显示短 id */
 		actorNames?: Record<string, string>;
 	}>(),
-	{ loading: false, emptyText: '还没有阶段事件', actorNames: () => ({}) }
+	{ loading: false, emptyText: '这个阶段还没有操作记录', actorNames: () => ({}) }
 );
 
 const ACTION_TEXT: Record<string, string> = {
@@ -59,7 +59,7 @@ const ACTION_TEXT: Record<string, string> = {
 	TRANSITION: '状态流转',
 };
 
-const actionText = (action: string) => ACTION_TEXT[action] || action || '事件';
+const actionText = (action: string) => ACTION_TEXT[action] || '其他操作';
 
 const dotType = (e: MoldStageEvent) => {
 	if (e.action === 'BLOCK') return 'danger';
@@ -68,7 +68,7 @@ const dotType = (e: MoldStageEvent) => {
 	return '';
 };
 
-const actorName = (id: string) => props.actorNames?.[id] || id.slice(0, 8);
+const actorName = (id: string) => props.actorNames?.[id] || '（账号已停用或不可见）';
 </script>
 
 <style scoped lang="scss">

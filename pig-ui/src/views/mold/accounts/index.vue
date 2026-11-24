@@ -7,7 +7,7 @@
 						<div>
 							<h1>账号管理</h1>
 							<p>
-								六个业务角色；新建账号与重置口令后必须首次登录改密。临时口令只显示一次，不落库明文。
+								给员工开账号、分配角色、重置密码。新账号或重置密码后，本人首次登录要先改密码；临时密码只显示一次，系统不保存明文。
 								<span v-if="state !== 'forbidden' && state !== 'error'" class="mold-page-total">
 									共 {{ state === 'loading' ? '—' : total }} 个账号
 								</span>
@@ -38,7 +38,7 @@
 								<el-input v-model="filters.keyword" placeholder="登录名 / 显示名" clearable style="width: 190px" />
 							</el-form-item>
 							<el-form-item label="状态">
-								<el-select v-model="filters.status" placeholder="全部" clearable style="width: 120px">
+								<el-select v-model="filters.status" placeholder="全部" clearable style="width: 120px" @change="onQuery">
 									<el-option label="启用" value="ACTIVE" />
 									<el-option label="停用" value="DISABLED" />
 								</el-select>
@@ -138,8 +138,8 @@
 											<el-dropdown-menu>
 												<el-dropdown-item v-if="canUpdate" command="edit">编辑资料</el-dropdown-item>
 												<el-dropdown-item v-if="canRole" command="roles">分配角色</el-dropdown-item>
-												<el-dropdown-item v-if="canReset && row.id !== meId" command="password">重置口令</el-dropdown-item>
-												<el-dropdown-item v-if="canUpdate && row.id === meId" disabled>自己的状态/角色受保护</el-dropdown-item>
+												<el-dropdown-item v-if="canReset && row.id !== meId" command="password">重置密码</el-dropdown-item>
+												<el-dropdown-item v-if="canUpdate && row.id === meId" disabled>不能修改自己的状态和角色</el-dropdown-item>
 											</el-dropdown-menu>
 										</template>
 									</el-dropdown>
@@ -177,7 +177,7 @@
 			<el-form ref="createRef" :model="createForm" :rules="createRules" label-position="top" @submit.prevent="submitCreate">
 				<div class="mold-form-grid">
 					<el-form-item label="登录名" prop="loginName" :error="createFieldErrors.loginName">
-						<el-input v-model="createForm.loginName" maxlength="64" placeholder="3-64 位字母数字 . _ -" />
+						<el-input v-model="createForm.loginName" maxlength="64" placeholder="3-64 位，可用字母、数字和 . _ -" />
 					</el-form-item>
 					<el-form-item label="显示名" prop="displayName" :error="createFieldErrors.displayName">
 						<el-input v-model="createForm.displayName" maxlength="128" />
@@ -185,9 +185,9 @@
 					<el-form-item label="手机号（可选）" :error="createFieldErrors.phone">
 						<el-input v-model="createForm.phone" maxlength="20" />
 					</el-form-item>
-					<el-form-item label="初始口令" prop="password" :error="createFieldErrors.password">
+					<el-form-item label="初始密码" prop="password" :error="createFieldErrors.password">
 						<div class="mold-password-row">
-							<el-input v-model="createForm.password" type="password" show-password maxlength="128" placeholder="12-128 位" />
+							<el-input v-model="createForm.password" type="password" show-password maxlength="128" placeholder="至少 12 位" />
 							<el-button size="small" @click="generatePassword">生成</el-button>
 						</div>
 					</el-form-item>
@@ -198,7 +198,7 @@
 							{{ r.label }}
 						</el-checkbox>
 					</div>
-					<p class="mold-form-hint">新建账号首次登录强制改密（mustChangePassword）。</p>
+					<p class="mold-form-hint">新账号首次登录时，系统会要求本人先修改密码。</p>
 				</el-form-item>
 				<div class="mold-dialog-actions">
 					<el-button @click="createVisible = false">取消</el-button>
@@ -253,16 +253,16 @@
 			</div>
 		</el-dialog>
 
-		<!-- 重置口令 -->
-		<el-dialog v-model="passwordVisible" :title="`重置口令 ${passwordTarget?.loginName || ''}`" :width="dialogWidth" append-to-body :close-on-click-modal="false" class="mold-dialog">
+		<!-- 重置密码 -->
+		<el-dialog v-model="passwordVisible" :title="`重置密码 ${passwordTarget?.loginName || ''}`" :width="dialogWidth" append-to-body :close-on-click-modal="false" class="mold-dialog">
 			<el-alert v-if="passwordError" type="error" :closable="false" show-icon :title="passwordError" class="mold-dialog-alert" />
 			<template v-if="temporaryPassword">
-				<el-alert type="success" :closable="false" show-icon title="口令已重置" description="临时口令只显示这一次，关闭后无法再查看；请当面或通过安全渠道交给本人。" />
+				<el-alert type="success" :closable="false" show-icon title="密码已重置" description="临时密码只显示这一次，关闭后无法再查看；请当面或通过安全渠道交给本人。" />
 				<div class="mold-temp-password">
 					<code>{{ temporaryPassword }}</code>
 					<el-button size="small" :icon="CopyDocument" @click="copyPassword">复制</el-button>
 				</div>
-				<p class="mold-form-hint">对方下次登录会被要求先改密（mustChangePassword=true）。</p>
+				<p class="mold-form-hint">对方下次登录时会被要求先修改密码。</p>
 				<div class="mold-dialog-actions">
 					<el-button type="primary" @click="closePassword">我已记录，关闭</el-button>
 				</div>
@@ -271,12 +271,12 @@
 				<el-form label-position="top" @submit.prevent="submitPassword">
 					<el-form-item label="方式">
 						<el-radio-group v-model="passwordMode">
-							<el-radio-button value="generate">生成临时口令</el-radio-button>
-							<el-radio-button value="custom">指定口令</el-radio-button>
+							<el-radio-button value="generate">生成临时密码</el-radio-button>
+							<el-radio-button value="custom">自己设定密码</el-radio-button>
 						</el-radio-group>
 					</el-form-item>
-					<el-form-item v-if="passwordMode === 'custom'" label="新口令">
-						<el-input v-model="customPassword" type="password" show-password maxlength="128" placeholder="12-128 位，不得与登录名/显示名相同" />
+					<el-form-item v-if="passwordMode === 'custom'" label="新密码">
+						<el-input v-model="customPassword" type="password" show-password maxlength="128" placeholder="至少 12 位，不能和登录名、显示名相同" />
 					</el-form-item>
 					<div class="mold-dialog-actions">
 						<el-button @click="passwordVisible = false">取消</el-button>
@@ -375,7 +375,7 @@ const createForm = reactive({ loginName: '', displayName: '', phone: '', passwor
 const createRules = {
 	loginName: [{ required: true, message: '请填写登录名', trigger: 'blur' }],
 	displayName: [{ required: true, message: '请填写显示名', trigger: 'blur' }],
-	password: [{ required: true, message: '请填写初始口令', trigger: 'blur' }],
+	password: [{ required: true, message: '请填写初始密码', trigger: 'blur' }],
 };
 
 function openCreate() {
@@ -421,7 +421,7 @@ async function submitCreate() {
 	try {
 		await createUser(userBody, beginIdempotentAction(scope));
 		finishIdempotentAction(scope);
-		ElMessage.success('账号已创建，首次登录需改密');
+		ElMessage.success('账号已创建，本人首次登录时需要先修改密码');
 		createVisible.value = false;
 		list.reload();
 	} catch (err: any) {
@@ -511,7 +511,7 @@ async function submitRoles() {
 	}
 }
 
-/* ------------------------------ 重置口令 ------------------------------ */
+/* ------------------------------ 重置密码 ------------------------------ */
 const passwordVisible = ref(false);
 const passwordError = ref('');
 const passwordTarget = ref<MoldUserAccount | null>(null);
@@ -538,7 +538,7 @@ async function submitPassword() {
 			passwordMode.value === 'generate' ? { generate: true } : { password: customPassword.value }
 		);
 		temporaryPassword.value = res.temporaryPassword || customPassword.value;
-		ElMessage.success('口令已重置');
+		ElMessage.success('密码已重置');
 		list.reload();
 	} catch (err: any) {
 		passwordError.value = describeMoldError(err, '重置失败').message;
@@ -552,7 +552,7 @@ async function copyPassword() {
 		await navigator.clipboard.writeText(temporaryPassword.value);
 		ElMessage.success('已复制');
 	} catch {
-		ElMessage.warning('复制失败，请手动选择口令');
+		ElMessage.warning('复制失败，请手动选择密码');
 	}
 }
 

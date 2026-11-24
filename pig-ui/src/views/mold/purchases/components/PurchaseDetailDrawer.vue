@@ -14,7 +14,6 @@
 					<h2>{{ counterpartyName }}</h2>
 					<div class="mold-pd-tags">
 						<StatusTag v-if="purchase" kind="purchase" :value="purchase.status" />
-						<span v-if="purchase" class="mold-pd-version">v{{ purchase.version }}</span>
 						<span v-if="purchase" class="mold-pd-date">{{ formatDate(purchase.purchaseDate) }}</span>
 					</div>
 				</div>
@@ -95,7 +94,7 @@
 
 					<el-tab-pane :label="`收货（${receipts.length}）`" name="receipts">
 						<div class="mold-pd-tab-head">
-							<span class="mold-inline-note">收货累计不得超采购量（服务端 422 OVER_RECEIPT）。</span>
+							<span class="mold-inline-note">累计收货数量不能超过采购数量。</span>
 							<el-button v-if="canReceipt && purchase.status === 'CONFIRMED'" size="small" type="primary" @click="openReceipt">
 								登记收货
 							</el-button>
@@ -124,7 +123,7 @@
 
 					<el-tab-pane :label="`发票（${invoices.length}）`" name="invoices">
 						<div class="mold-pd-tab-head">
-							<span class="mold-inline-note">发票累计不得超采购额；同供应商 ACTIVE 发票号唯一。</span>
+							<span class="mold-inline-note">发票累计金额不能超过采购额；同一供应商的有效发票，发票号不能重复。</span>
 							<el-button v-if="canInvoice && purchase.status === 'CONFIRMED'" size="small" type="primary" @click="openInvoice">
 								登记发票
 							</el-button>
@@ -153,7 +152,7 @@
 
 					<el-tab-pane :label="`付款（${payments.length}）`" name="payments">
 						<div class="mold-pd-tab-head">
-							<span class="mold-inline-note">付款落到收支流水（PURCHASE_PAYMENT / PURCHASE_REFUND），付款净额不得超采购额。</span>
+							<span class="mold-inline-note">付款和退款会自动记入「财务收支」；付款减去退款后不能超过采购额。</span>
 							<div>
 								<el-button v-if="canPay && purchase.status === 'CONFIRMED'" size="small" @click="openPayment('PURCHASE_REFUND')">
 									登记退款
@@ -174,7 +173,9 @@
 									<MoneyText :value="row.amount" :currency="row.currency" :direction="row.category === 'PURCHASE_REFUND' ? 'IN' : 'OUT'" />
 								</template>
 							</el-table-column>
-							<el-table-column prop="method" label="方式" width="90" />
+							<el-table-column label="方式" width="90">
+								<template #default="{ row }">{{ METHODS.find((m) => m.value === row.method)?.label || (row.method ? '其他' : '—') }}</template>
+							</el-table-column>
 							<el-table-column label="状态" width="86" align="center">
 								<template #default="{ row }"><StatusTag kind="cash" :value="row.status" /></template>
 							</el-table-column>
@@ -281,7 +282,7 @@
 					<el-input v-model="paymentForm.note" type="textarea" :rows="2" maxlength="2000" />
 				</el-form-item>
 				<p class="mold-form-hint">
-					币种固定 {{ purchase?.currency }}；付款净额不得超过采购金额（服务端 422 OVER_PAYMENT）。
+					币种与采购单一致（{{ purchase?.currency }}）；付款减去退款后不能超过采购金额。
 				</p>
 				<div class="mold-dialog-actions">
 					<el-button @click="paymentVisible = false">取消</el-button>
@@ -295,7 +296,7 @@
 			<el-alert v-if="dialogError" type="error" :closable="false" show-icon :title="dialogError" class="mold-dialog-alert" />
 			<el-form label-position="top" @submit.prevent="submitVoid">
 				<el-form-item label="作废原因（必填）">
-					<el-input v-model="voidReason" type="textarea" :rows="3" maxlength="2000" show-word-limit placeholder="写清原因，作废后保留原记录与审计" />
+					<el-input v-model="voidReason" type="textarea" :rows="3" maxlength="2000" show-word-limit placeholder="写清原因，原记录会保留，可在审计日志里查到" />
 				</el-form-item>
 				<div class="mold-dialog-actions">
 					<el-button @click="voidVisible = false">取消</el-button>
@@ -399,7 +400,7 @@ const receivedByItem = computed(() => {
 	return map;
 });
 
-const itemName = (id: string) => (purchase.value?.items || []).find((i) => i.id === id)?.name || id.slice(0, 8);
+const itemName = (id: string) => (purchase.value?.items || []).find((i) => i.id === id)?.name || '（明细已删除）';
 
 const allocationText = (value: string) =>
 	({ PROJECT: '归属项目', PUBLIC: '公共采购', UNASSIGNED: '未分配' } as Record<string, string>)[value] || value;

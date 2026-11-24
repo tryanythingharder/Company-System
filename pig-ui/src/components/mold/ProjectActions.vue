@@ -128,10 +128,7 @@
 						data-testid="edit-note"
 					/>
 				</el-form-item>
-				<p class="mold-form-hint">
-					当前版本 v{{ project.version }}。保存时带 <code>If-Match: "{{ project.version }}"</code>；若他人已修改，服务端返回
-					409，不会覆盖。
-				</p>
+				<p class="mold-form-hint">如果有人在你编辑期间改过这个项目，保存时会提示你重新加载，不会覆盖别人的修改。</p>
 				<div class="mold-dialog-actions">
 					<el-button @click="editVisible = false">取消</el-button>
 					<el-button type="primary" native-type="submit" :loading="submitting" data-testid="edit-submit">保存</el-button>
@@ -168,11 +165,11 @@
 				:title="actionError"
 			/>
 			<div class="mold-complete-rules">
-				<p>完工前服务端会核对 D1 三要素，缺一项拒绝并说明缺哪项：</p>
+				<p>确认完工需要同时满足：</p>
 				<ul>
-					<li>至少一个有效阶段</li>
-					<li>所有阶段已完成</li>
-					<li>没有未解决异常</li>
+					<li>至少有一个阶段</li>
+					<li>所有阶段都已完成</li>
+					<li>没有未处理的异常</li>
 				</ul>
 			</div>
 			<el-form ref="completeFormRef" :model="completeForm" :rules="completeRules" label-position="top" @submit.prevent="submitComplete">
@@ -303,7 +300,7 @@
 						data-testid="owner-reason"
 					/>
 				</el-form-item>
-				<p class="mold-form-hint">当前负责人：{{ project.owner?.displayName || '—' }}。变更负责人仅 OWNER 可操作（服务端校验），且必须填写原因。</p>
+				<p class="mold-form-hint">当前负责人：{{ project.owner?.displayName || '—' }}。只有老板可以变更负责人，必须填写原因，变更记录会写入审计日志。</p>
 				<div class="mold-dialog-actions">
 					<el-button @click="ownerVisible = false">取消</el-button>
 					<el-button type="primary" native-type="submit" :loading="submitting" data-testid="owner-submit">保存</el-button>
@@ -383,12 +380,12 @@ const hasAnyWrite = computed(
 
 const writeHint = computed(() => {
 	if (!identityReady.value) return '正在核对当前账号权限…';
-	if (!isManager(props.project)) return '仅项目负责人或老板可操作（服务端会再次校验）';
+	if (!isManager(props.project)) return '只有项目负责人或老板可以操作';
 	if (!editable.value) return '项目已完工或已取消，不能再修改';
 	if (!hasAnyWrite.value) return '当前账号没有写操作权限';
 	return '更多写操作';
 });
-const editHint = computed(() => (canEdit.value ? '编辑项目（带 If-Match）' : writeHint.value));
+const editHint = computed(() => (canEdit.value ? '编辑项目名称、交期和备注' : writeHint.value));
 const completeHint = computed(() => (canComplete.value ? '确认项目完工' : writeHint.value));
 
 function onCommand(cmd: string) {
@@ -633,14 +630,14 @@ function buildStateMessage(err: MoldApiError): string {
 	const details = err.details || {};
 	if (details.missing === 'OPEN_STAGES' && Array.isArray(details.stages)) {
 		const list = details.stages
-			.map((s: any) => `${s.name}（${s.status}）`)
+			.map((s: any) => `${s.name}（${({ NOT_STARTED: '未开始', IN_PROGRESS: '进行中', BLOCKED: '受阻' } as Record<string, string>)[s.status] || s.status}）`)
 			.slice(0, 6)
 			.join('、');
-		return `服务端拒绝完工：仍有未完成阶段 ${list}${details.stages.length > 6 ? ' 等' : ''}。`;
+		return `还不能完工：这些阶段还没完成——${list}${details.stages.length > 6 ? ' 等' : ''}。`;
 	}
-	if (details.missing === 'STAGES') return '服务端拒绝完工：至少需要一个有效阶段。';
+	if (details.missing === 'STAGES') return '还不能完工：项目里还没有阶段。';
 	if (details.missing === 'OPEN_ISSUES' && Array.isArray(details.issues)) {
-		return `服务端拒绝完工：仍有未解决异常 ${details.issues.map((i: any) => i.title).join('、')}。`;
+		return `还不能完工：还有未处理的异常——${details.issues.map((i: any) => i.title).join('、')}。`;
 	}
 	return err.message || '项目状态不允许完工';
 }

@@ -45,8 +45,8 @@ const state = reactive<BreadcrumbState>({
 
 const isShowBreadcrumb = computed(() => {
 	initRouteSplit(route);
-	const { layout, isBreadcrumb } = themeConfig.value;
-	if (layout === 'classic' || layout === 'transverse') return false;
+	const { layout, isBreadcrumb, isClassicSplitMenu } = themeConfig.value;
+	if (layout === 'transverse' || (layout === 'classic' && isClassicSplitMenu)) return false;
 	return isBreadcrumb;
 });
 const onBreadcrumbClick = (v: RouteItem) => {

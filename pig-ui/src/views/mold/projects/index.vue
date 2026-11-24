@@ -26,16 +26,26 @@
 					<!-- 数据源提示：mock 必须显式标识，不允许冒充真实数据 -->
 					<div v-if="usingMock" class="mold-notice" role="status">
 						<el-icon><WarningFilled /></el-icon>
-						<span>DEV 降级示例数据（mock）：真实接口不可达，仅用于本地核对交互；页面字段与契约一致，恢复接口后自动切回真实数据。</span>
+						<span>当前显示的是示例数据（开发环境，服务暂时连不上），不是真实项目。服务恢复后会自动切回。</span>
 					</div>
 
 					<!-- 统计卡：按本页行计算（P1-02）；无权限/失败时不显示 0 -->
 					<el-row v-if="state !== 'forbidden' && state !== 'error'" :gutter="16">
 						<el-col v-for="s in stats" :key="s.key" :xs="12" :sm="12" :md="6">
-							<div class="mold-stat">
+							<div
+								class="mold-stat is-clickable"
+								:class="{ 'is-current': filters.status === s.status }"
+								role="button"
+								tabindex="0"
+								:aria-pressed="filters.status === s.status"
+								:aria-label="`只看${s.label}的项目`"
+								@click="onStatClick(s.status)"
+								@keydown.enter.prevent="onStatClick(s.status)"
+								@keydown.space.prevent="onStatClick(s.status)"
+							>
 								<div class="mold-stat-label">{{ s.label }}</div>
 								<div class="mold-stat-value" :class="s.tone">
-									<span v-if="state === 'loading'" class="mold-skel-block" style="display: inline-block; width: 56px; height: 28px" />
+									<span v-if="s.value === null" class="mold-skel-block" style="display: inline-block; width: 56px; height: 28px" />
 									<template v-else>{{ s.value }}<span class="mold-stat-unit">{{ s.unit }}</span></template>
 								</div>
 								<div class="mold-stat-foot">{{ s.foot }}</div>
@@ -50,16 +60,17 @@
 								<el-input v-model="filters.q" placeholder="输入编号或名称" clearable style="width: 200px" @keyup.enter="onQuery" />
 							</el-form-item>
 							<el-form-item label="业务类型">
-								<el-select v-model="filters.businessType" placeholder="全部" clearable style="width: 150px">
+								<el-select v-model="filters.businessType" placeholder="全部" clearable style="width: 150px" @change="onQuery">
 									<el-option label="整套模具制作" value="MOLD_SET" />
 									<el-option label="零件·工序加工" value="PART_PROCESS" />
 								</el-select>
 							</el-form-item>
 							<el-form-item label="项目状态">
-								<el-select v-model="filters.status" placeholder="全部" clearable style="width: 130px">
+								<el-select v-model="filters.status" placeholder="全部" clearable style="width: 130px" @change="onQuery">
 									<el-option label="进行中" value="ACTIVE" />
 									<el-option label="已暂停" value="ON_HOLD" />
 									<el-option label="已完工" value="COMPLETED" />
+									<el-option label="已取消" value="CANCELLED" />
 								</el-select>
 							</el-form-item>
 							<el-form-item>
@@ -72,7 +83,7 @@
 					<!-- 工具栏 -->
 					<div v-if="state !== 'forbidden' && state !== 'error'" class="mold-toolbar">
 						<el-button v-if="canCreate" type="primary" :icon="Plus" data-testid="project-create" @click="onCreate">新建项目</el-button>
-						<el-tooltip content="导出已勾选的项目（当前页勾选，逐行写 CSV）" placement="top">
+						<el-tooltip content="把勾选的项目导出为表格文件（可用 Excel 打开）" placement="top">
 							<span>
 								<el-button
 									plain
@@ -87,7 +98,7 @@
 								</el-button>
 							</span>
 						</el-tooltip>
-						<el-tooltip content="导出当前筛选结果（调用后端 CSV 导出，一次生成全部行）" placement="top">
+						<el-tooltip content="按当前筛选条件导出全部项目（不限于本页，可用 Excel 打开）" placement="top">
 							<el-button
 								plain
 								type="primary"
@@ -101,15 +112,9 @@
 						</el-tooltip>
 						<div v-if="exportInfo" class="mold-export-note" role="status" data-testid="export-info">{{ exportInfo }}</div>
 						<div class="mold-toolbar-right">
-							<el-tooltip content="刷新" placement="top">
-								<el-button circle :icon="Refresh" aria-label="刷新" :loading="loading" @click="reload" />
-							</el-tooltip>
-							<el-tooltip content="筛选" placement="top">
-								<el-button class="mold-desktop-only" circle :icon="Search" aria-label="显示或隐藏筛选" @click="mobileFilterOpen = !mobileFilterOpen" />
-							</el-tooltip>
 							<el-popover v-if="isDesktop" placement="bottom-end" :width="220" trigger="click">
 								<template #reference>
-									<el-button circle :icon="Operation" aria-label="列设置" />
+									<el-button :icon="Operation" aria-label="列设置">显示列</el-button>
 								</template>
 								<div class="mold-col-picker">
 									<div class="mold-col-picker-title">显示列（项目名称固定显示）</div>
@@ -549,23 +554,34 @@ const hasFilters = computed(() => !!(filters.q || filters.businessType || filter
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)));
 const errorActionText = computed(() => (errorAction.value === 'login' ? '重新登录' : '重试'));
 
-/* ------------------------------ 统计（本页行） ------------------------------ */
+/* ------------------------------ 统计（全部项目按状态） ------------------------------ */
+// 按「编号/名称 + 业务类型」统计全部项目（不受翻页和状态筛选影响）；点卡片 = 按该状态筛选，再点一次取消
+const statCounts = reactive<Record<string, number | null>>({ all: null, ACTIVE: null, ON_HOLD: null, COMPLETED: null });
+let statSeq = 0;
+async function loadStats() {
+	const seq = ++statSeq;
+	const base = { pageNum: 1, pageSize: 1, q: filters.q.trim() || undefined, businessType: filters.businessType || undefined };
+	const keys = ['all', 'ACTIVE', 'ON_HOLD', 'COMPLETED'];
+	const res = await Promise.allSettled(keys.map((k) => fetchProjectPage({ ...base, status: k === 'all' ? undefined : k } as any)));
+	if (seq !== statSeq) return;
+	keys.forEach((k, i) => {
+		const r = res[i];
+		statCounts[k] = r.status === 'fulfilled' ? r.value.total : null;
+	});
+}
 const stats = computed(() => {
-	const pageRows = rows.value;
+	const scope = filters.q.trim() || filters.businessType ? '当前搜索范围' : '全部项目';
 	return [
-		{ key: 'total', label: '本页项目', value: pageRows.length, unit: '个', foot: `第 ${pageNum.value} 页 · 共 ${total.value} 条`, tone: '' },
-		{ key: 'active', label: '本页进行中', value: pageRows.filter((r) => r.status === 'ACTIVE').length, unit: '个', foot: '本页 · 进行中', tone: '' },
-		{ key: 'done', label: '本页已完工', value: pageRows.filter((r) => r.status === 'COMPLETED').length, unit: '个', foot: '本页 · 已完工', tone: 'is-ok' },
-		{
-			key: 'blocked',
-			label: '本页有受阻阶段',
-			value: pageRows.filter((r) => (r.blockedStageCount ?? r.stageCounts?.blocked ?? 0) > 0).length,
-			unit: '个',
-			foot: '本页 · 有受阻阶段',
-			tone: 'is-bad',
-		},
+		{ key: 'all', status: '', label: '全部', value: statCounts.all, unit: '个', foot: scope, tone: '' },
+		{ key: 'active', status: 'ACTIVE', label: '进行中', value: statCounts.ACTIVE, unit: '个', foot: '点击只看进行中', tone: '' },
+		{ key: 'hold', status: 'ON_HOLD', label: '已暂停', value: statCounts.ON_HOLD, unit: '个', foot: '点击只看已暂停', tone: 'is-warn' },
+		{ key: 'done', status: 'COMPLETED', label: '已完工', value: statCounts.COMPLETED, unit: '个', foot: '点击只看已完工', tone: 'is-ok' },
 	];
 });
+function onStatClick(status: string) {
+	filters.status = filters.status === status ? '' : status;
+	onQuery();
+}
 
 /* ------------------------------ 文案与格式化 ------------------------------ */
 const businessTypeText = (t: string) => ({ MOLD_SET: '整套模具制作', PART_PROCESS: '零件·工序加工' } as Record<string, string>)[t] || t || '—';
@@ -697,12 +713,14 @@ async function loadData(firstLoad = false) {
 
 function reload() {
 	loadData(false);
+	loadStats();
 }
 
 function onQuery() {
 	pageNum.value = 1;
 	exportInfo.value = '';
 	loadData(false);
+	loadStats();
 }
 
 function onReset() {
@@ -712,6 +730,7 @@ function onReset() {
 	pageNum.value = 1;
 	exportInfo.value = '';
 	loadData(false);
+	loadStats();
 }
 
 function onPageChange(next: number) {
@@ -895,15 +914,25 @@ watch(isDesktop, async () => {
 	tableRef.value?.doLayout?.();
 });
 
-onMounted(() => {
-	ensureLoaded();
+onMounted(async () => {
 	loadData(true);
+	loadStats();
 	nextTick(updateTableHeight);
+	await ensureLoaded();
+	// 首页快捷入口「新建项目」：带 ?create=1 进来时直接打开新建弹窗，用完清掉参数，避免刷新又弹出
+	if (route.query.create === '1') {
+		if (canCreate.value) createVisible.value = true;
+		const { create, ...rest } = route.query;
+		router.replace({ query: rest });
+	}
 });
 
 /* SSE：项目/阶段/异常变更只重取当前页列表，不整页刷新 */
-const refreshProjectsOnEvent = debounceRefresh(() => loadData(false), 800);
-useMoldEvent(['project.created', 'project.completed', 'project.members.updated', 'project.owner.transferred', 'stage.created', 'stage.updated', 'stage.transitioned', 'issue.created', 'issue.updated'], refreshProjectsOnEvent);
+const refreshProjectsOnEvent = debounceRefresh(() => {
+	loadData(false);
+	loadStats();
+}, 800);
+useMoldEvent(['project.created', 'project.completed', 'project.members.updated', 'project.owner.transferred', 'project.status.changed', 'stage.created', 'stage.voided', 'stage.updated', 'stage.transitioned', 'issue.created', 'issue.updated'], refreshProjectsOnEvent);
 </script>
 
 <style scoped lang="scss">

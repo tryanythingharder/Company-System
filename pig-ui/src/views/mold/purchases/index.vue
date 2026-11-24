@@ -7,7 +7,7 @@
 						<div>
 							<h1>采购台账</h1>
 							<p>
-								采购单三段式（草稿 → 确认 → 收货 / 开票 / 付款）；金额由服务端重算，前端只做核对。
+								采购单流程：草稿 → 确认 → 收货、开票、付款。金额按数量 × 单价自动计算。
 								<span v-if="tab === 'purchases' && state !== 'forbidden' && state !== 'error'" class="mold-page-total">
 									共 {{ state === 'loading' ? '—' : total }} 张
 								</span>
@@ -29,8 +29,8 @@
 										新建采购单
 									</el-button>
 								</div>
-								<div class="mold-toolbar-right mold-inline-note">
-									草稿可编辑；确认后仅可改备注，金额/归属变更走作废后重录。
+								<div class="mold-toolbar-note mold-inline-note">
+									草稿可以随意改；确认后只能改备注，金额或归属错了请作废后重新录入。
 								</div>
 							</div>
 
@@ -40,19 +40,19 @@
 										<el-input v-model="filters.code" placeholder="模糊匹配" clearable style="width: 150px" />
 									</el-form-item>
 									<el-form-item label="状态">
-										<el-select v-model="filters.status" placeholder="全部" clearable style="width: 120px">
+										<el-select v-model="filters.status" placeholder="全部" clearable style="width: 120px" @change="onQuery">
 											<el-option label="草稿" value="DRAFT" />
 											<el-option label="已确认" value="CONFIRMED" />
 											<el-option label="已作废" value="VOID" />
 										</el-select>
 									</el-form-item>
 									<el-form-item label="供应商">
-										<el-select v-model="filters.counterpartyId" placeholder="全部" clearable filterable style="width: 180px">
+										<el-select v-model="filters.counterpartyId" placeholder="全部" clearable filterable style="width: 180px" @change="onQuery">
 											<el-option v-for="c in suppliers" :key="c.id" :label="c.name" :value="c.id" />
 										</el-select>
 									</el-form-item>
 									<el-form-item label="归属">
-										<el-select v-model="filters.allocationStatus" placeholder="全部" clearable style="width: 130px">
+										<el-select v-model="filters.allocationStatus" placeholder="全部" clearable style="width: 130px" @change="onQuery">
 											<el-option label="归属项目" value="PROJECT" />
 											<el-option label="公共采购" value="PUBLIC" />
 											<el-option label="未分配" value="UNASSIGNED" />
@@ -394,7 +394,7 @@ const projectMap = computed(() => {
 	return map;
 });
 
-const counterpartyName = (id: string) => counterpartyMap.value.get(id)?.name || id.slice(0, 8);
+const counterpartyName = (id: string) => counterpartyMap.value.get(id)?.name || '（单位已停用或不可见）';
 const allocationText = (value: string) =>
 	({ PROJECT: '归属项目', PUBLIC: '公共采购', UNASSIGNED: '未分配' } as Record<string, string>)[value] || value || '—';
 const typeText = (value: string) => ({ CUSTOMER: '客户', SUPPLIER: '供应商', OTHER: '其他' } as Record<string, string>)[value] || value;

@@ -6,7 +6,7 @@
 					<div class="mold-page-head">
 						<div>
 							<h1>阶段历史</h1>
-							<p>阶段时间线只追加不修改；每条记录含动作、状态变化、原因与操作人。</p>
+							<p>按时间列出这个阶段的每一次操作：谁、什么时候、做了什么、原因是什么。记录只增不改，可作为依据。</p>
 						</div>
 						<div class="mold-page-head-actions">
 							<el-button circle :icon="Refresh" aria-label="刷新阶段历史" :loading="loading" @click="reloadEvents" />
@@ -62,8 +62,8 @@
 											计划 {{ formatDate(currentStage.plannedStart) }} ~ {{ formatDate(currentStage.plannedEnd) }}
 										</span>
 									</span>
-									<span v-else>阶段 {{ stageId.slice(0, 8) }}</span>
-									<span class="mold-history-count">共 {{ eventTotal }} 条事件</span>
+									<span v-else>阶段信息加载中…</span>
+									<span class="mold-history-count">共 {{ eventTotal }} 条记录</span>
 								</div>
 							</div>
 							<div class="mold-history-actions">
@@ -119,8 +119,7 @@
 								<dl class="mold-kv mold-kv-tight">
 									<div><dt>阶段</dt><dd>{{ stageLabel }}</dd></div>
 									<div v-if="currentStage"><dt>责任人</dt><dd>{{ actorNames[currentStage.responsibleUserId || ''] || shortId(currentStage.responsibleUserId) }}</dd></div>
-									<div v-if="currentStage"><dt>版本</dt><dd>v{{ currentStage.version }}</dd></div>
-									<div><dt>事件数</dt><dd>{{ eventTotal }}</dd></div>
+									<div><dt>记录数</dt><dd>{{ eventTotal }}</dd></div>
 								</dl>
 								<AttachmentPanel owner-type="STAGE" :owner-id="stageId" title="阶段附件" :subject="stageSubject" />
 							</aside>
@@ -180,11 +179,11 @@ const stageSubject = computed(() => ({
 const stageLabel = computed(() => {
 	if (currentStage.value) return `${currentStage.value.sortOrder}. ${currentStage.value.name}`;
 	if (stageNameFromQuery.value) return stageNameFromQuery.value;
-	return stageId.value ? `阶段 ${stageId.value.slice(0, 8)}` : '';
+	return stageId.value ? '阶段' : '';
 });
 
 function shortId(id?: string | null) {
-	return id ? id.slice(0, 8) : '—';
+	return id ? '（账号已停用或不可见）' : '未指定';
 }
 
 async function loadProjects() {

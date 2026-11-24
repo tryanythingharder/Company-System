@@ -1,14 +1,8 @@
 <template>
-  <div>
-    <widgets/>
-    <notice v-model:show="showNotice"/>
-  </div>
+	<Workbench />
 </template>
 
 <script setup lang="ts" name="dashboard">
-const Widgets = defineAsyncComponent(() => import('./widgets/index.vue'));
-const Notice = defineAsyncComponent(() => import('./notice/index.vue'));
-// 演示环境
-const isPreview = import.meta.env.VITE_PREVIEW_MODEL === 'true';
-const showNotice = ref(isPreview);
+// 首页 = 按角色显示的工作台：待办、需要关注的项目、本月收支、7 天内到期
+const Workbench = defineAsyncComponent(() => import('./workbench.vue'));
 </script>

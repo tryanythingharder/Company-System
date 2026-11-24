@@ -115,9 +115,9 @@ onUnmounted(() => {
 	height: 50px;
 	display: flex;
 	align-items: center;
-	background: linear-gradient(135deg, var(--next-bg-topBar) 0%, color-mix(in srgb, var(--next-bg-topBar), #000 12%) 100%);
-	box-shadow: 0 2px 8px rgba(46, 92, 246, 0.15);
-	border-bottom: none;
+	background: var(--next-bg-topBar);
+	box-shadow: none;
+	border-bottom: 1px solid var(--el-border-color-lighter);
 
 	.layout-navbars-breadcrumb-actions {
 		margin-left: auto;

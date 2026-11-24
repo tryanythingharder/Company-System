@@ -15,7 +15,7 @@
 			:closable="false"
 			show-icon
 			title="已确认采购单只允许修改备注"
-			description="归属、金额、明细的变更走作废后重录；服务端会拒绝其它字段。"
+			description="归属、金额和明细不能直接修改；如需更改，请作废后重新录入。"
 			class="mold-dialog-alert"
 		/>
 
@@ -108,7 +108,7 @@
 			</el-table>
 
 			<p class="mold-form-hint">
-				金额由服务端按「数量 × 单价」重算，前端合计只用于核对。采购单创建后状态为草稿，确认后才可收货、开票、付款。
+				金额按「数量 × 单价」自动计算，以保存后的结果为准。新建的采购单是草稿，确认后才能收货、开票、付款。
 			</p>
 
 			<div class="mold-dialog-actions">
