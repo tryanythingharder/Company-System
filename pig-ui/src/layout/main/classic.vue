@@ -24,11 +24,8 @@ const layoutMainRef = ref<InstanceType<typeof LayoutMain>>();
 const route = useRoute();
 const { themeConfig } = storeToRefs(useThemeConfig());
 
-const isTagsview = computed(() => {
-  const { layout } = themeConfig.value;
-  if (layout === 'classic' && route.path === '/home') return false;
-	return themeConfig.value.isTagsview;
-});
+// 首页与其它页面一致：显示多标签栏
+const isTagsview = computed(() => themeConfig.value.isTagsview);
 
 const updateScrollbar = () => {
 	layoutMainRef.value?.layoutMainScrollbarRef?.update();

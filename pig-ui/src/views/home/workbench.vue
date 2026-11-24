@@ -168,6 +168,8 @@ import { fetchCashSummary } from '/@/api/mold/cash';
 import { useMoldPermissions } from '/@/api/mold/permissions';
 import { describeMoldError } from '/@/api/mold/errors';
 import { todayStamp } from '/@/utils/moldFormat';
+// 与登录欢迎语共用同一套问候（北京时间），避免首页和顶部提示说法不一致
+import { formatAxis } from '/@/utils/formatTime';
 
 const router = useRouter();
 const { can, ensureLoaded, meName, capabilities } = useMoldPermissions();
@@ -183,8 +185,7 @@ const cash = reactive({ in: '0', out: '0', net: '0' });
 const today = todayStamp();
 const monthStart = `${today.slice(0, 8)}01`;
 
-const hour = Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: 'Asia/Shanghai' }).format(new Date()));
-const greeting = hour < 6 ? '夜深了' : hour < 11 ? '早上好' : hour < 13 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
+const greeting = formatAxis(new Date());
 const todayText = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Shanghai' }).format(new Date());
 const monthText = `${Number(today.slice(5, 7))} 月 1 日至今天`;
 

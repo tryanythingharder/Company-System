@@ -25,7 +25,6 @@ const storesThemeConfig = useThemeConfig();
 const { routesList } = storeToRefs(stores);
 const { themeConfig } = storeToRefs(storesThemeConfig);
 const { isTagsViewCurrenFull } = storeToRefs(useTagsViewRoutes());
-const route = useRoute();
 const state = reactive<AsideState>({
 	menuList: [],
 	clientWidth: 0,
@@ -57,12 +56,8 @@ const setCollapseStyle = computed(() => {
 	return [asideBrColor, widthClass];
 });
 
-// 设置是否显示左侧菜单栏
-const setShowAside = computed(() => {
-  const { layout } = themeConfig.value;
-  if (layout !== 'classic') return true;
-  return route.path !== '/home';
-});
+// 左侧菜单栏始终显示：首页已改成工作台，和其它业务页保持同一套导航
+const setShowAside = computed(() => true);
 
 const setShowLogo = computed(() => {
 	const { layout, isShowLogo } = themeConfig.value;

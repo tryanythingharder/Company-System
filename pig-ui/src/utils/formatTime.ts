@@ -124,8 +124,13 @@ export function formatPast(param: string | Date, format: string = 'YYYY-mm-dd'):
  * @description param 调用 `formatAxis(new Date())` 输出 `上午好`
  * @returns 返回拼接后的时间字符串
  */
+/** 问候语用北京时间的小时（浏览器时区可能是海外，与系统内其它时间口径统一） */
+function beijingHour(param: Date): number {
+	return Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: 'Asia/Shanghai' }).format(new Date(param))) % 24;
+}
+
 export function formatAxis(param: Date): string {
-	let hour: number = new Date(param).getHours();
+	let hour: number = beijingHour(param);
 	if (hour < 6) return '凌晨好';
 	else if (hour < 9) return '早上好';
 	else if (hour < 12) return '上午好';
@@ -144,7 +149,7 @@ export function formatAxis(param: Date): string {
  * @returns 返回拼接后的时间字符串
  */
 export function formatAxisI18n(param: Date, t: (key: string) => string): string {
-	let hour: number = new Date(param).getHours();
+	let hour: number = beijingHour(param);
 	if (hour < 6) return t('timeGreeting.dawn');
 	else if (hour < 9) return t('timeGreeting.morning');
 	else if (hour < 12) return t('timeGreeting.forenoon');
