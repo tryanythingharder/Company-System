@@ -1,0 +1,159 @@
+# 生产就绪评估与整改记录
+
+评估日期：2026-11-23。评审分五个角度：应用安全、后端架构、数据库、前端、运维与部署。
+
+每条结论都对照过源码。评审里有一条“金额上限溢出”核对后不成立：校验条件是 `>= 1e12`，而 `decimal(14,2)` 的最大值是 999999999999.99，小于这个阈值，所以不需要改。
+
+## 一、本轮已整改
+
+### 应用安全
+
+| # | 问题 | 整改 | 位置 |
+|---|---|---|---|
+| S1 | OAuth 客户端密钥被打进前端 JS 包。前端刷新令牌和 `check_token` 直接拼 Basic 认证调 Pig 原生端点 | 刷新改走 `/admin/auth/refresh`；续期改为在本地读取过期时间判断；生产环境变量里不再放任何客户端凭证 | `pig-ui/src/api/login/index.ts`、`stores/userInfo.ts`、`.env.production` |
+| S2 | 库里留着 `pig:pig`、`app:app` 等遗留客户端，可以绕开登录限流直接爆破 | 初始化时删除 mold 以外的所有客户端；nginx 对外屏蔽 `/oauth2`、`/token` 等原生端点 | `deploy/mysql/init/10-mold-init.sh`、`deploy/nginx/mold.conf` |
+| S3 | 默认管理员 `admin/123456` 口令公开，且没有绑定业务身份 | 初始化时锁定 admin；后端启动时创建首个 OWNER，口令随机生成，首次登录强制改密 | `MoldOwnerBootstrap.java` |
+| S4 | 密钥硬编码，数据库用 root 连接，连接串带 `allowMultiQueries` | prod 配置里所有密钥都只写占位符，缺一个就启动失败；启动时自检，拒绝默认值、弱口令和 root 账号；改用最小权限账号（只有 DML 权限）；强制 TLS；去掉 `allowMultiQueries` | `application-prod.yml`、`MoldProdSecretsGuard.java` |
+| S5 | X-Forwarded-For 取最左边的值，客户端可以伪造 IP 绕过限流 | 改为从右往左跳过可信代理，取第一个不可信地址；可信代理支持 CIDR 写法 | `ClientIpResolver.java` 及测试 |
+| S6 | 登录限流：没有单 IP 的总量上限；`INCR` 和 `EXPIRE` 分两步执行，中途失败会留下永不过期的计数，造成永久锁定；登录名改大小写就能绕开 | 增加单 IP 每分钟 60 次上限；改用 Lua 脚本原子计数；登录名统一转小写 | `LoginRateLimiter.java` |
+| S7 | 停用闸门有漏洞：只覆盖 `/mold/**` 和 `/auth/**`；状态查询出错时直接放行；`/auth/refresh` 能给停用账号续期 | 两道闸门（停用、强制改密）覆盖全部接口；查询出错时返回 503；刷新前按令牌反查账号状态，停用则吊销整条授权 | `MoldWebConfig`、`AccountStatusInterceptor`、`AuthService.refresh` |
+| S8 | 重置或修改密码会顺带把 `lock_flag` 写回 0，等于解除了停用 | 去掉这两处对 `lock_flag` 的写入 | `UserService.java` |
+| S9 | `/druid/**`、`/actuator/**`、`/code/**`、文档路径都不需要登录 | prod 白名单收口；关闭 Druid 监控页；nginx 双重屏蔽 | `application-prod.yml`、`mold.conf` |
+| S10 | `v-html` 渲染站点配置，存在存储型 XSS | 渲染前用白名单过滤 | `utils/sanitizeHtml.ts`、`footer.vue`、`password.vue` |
+| S11 | Microsoft Clarity 会话录制可能把金额等页面内容传到第三方；反调试的绕过密钥是公开的 | 移除这两项的初始化 | `App.vue` |
+| S12 | 前端权限判断里写死了 `username==='admin'` | 删除 | `api/mold/permissions.ts` |
+| S13 | 上传上限 100MB，而业务上限是 10MB，整文件读入内存 | multipart 上限改为 11MB；nginx 改为 12MB | `application-prod.yml`、`mold.conf` |
+
+### 后端与数据库
+
+| # | 问题 | 整改 |
+|---|---|---|
+| B1 | **并发超付**：幂等包装层先开事务，在 RR 隔离级别下，后面的 `SUM` 读到的是旧快照；更正流程不锁采购单，而且加锁顺序和付款相反，会死锁 | 额度校验改为加锁读（`FOR SHARE`）；更正流程先锁采购单、再锁流水，和付款路径顺序一致；MySQL 全局改为 READ-COMMITTED |
+| B2 | Druid 连接池用默认值：最多 8 个连接、取连接无限等待。SSE 轮询会把池耗尽，所有请求线程挂死 | 最大连接 30、取连接最多等 3 秒，并开启空闲保活 |
+| B3 | 日志写到相对路径，目录名因占位符没解析变成 `_IS_UNDEFINED`，容器重启就丢；没有总量上限 | 改为 `/app/logs` 挂持久卷，总量上限 3GB；日志里带 requestId |
+| B4 | 数据库异常（死锁、约束违反）落到上游的默认处理器，返回 500，还可能带出 SQL 文本 | 死锁返回 409 `RETRYABLE_CONFLICT`，约束违反返回 409 `CONSTRAINT_VIOLATION`，超大上传返回 413；具体原因只写日志 |
+| B5 | 启动命令 `CMD sleep 15; java ...` 走 shell 形式，java 收不到 SIGTERM | 改为 `exec java`，开启优雅停机，等待 25 秒 |
+| B6 | requestId 没写进 MDC，外部传入的值也不校验 | 写入 MDC；只接受 `[A-Za-z0-9_.-]{1,64}`，防日志注入 |
+
+### 运维与部署
+
+- **镜像**：前后端都改为多阶段构建，构建机不需要装 JDK、Maven、Node；后端构建时运行单元测试，失败即中止；前端用 `npm ci` 按锁文件安装（新提交了 `package-lock.json`）。
+- **compose 编排**：
+  - MySQL 8.4 LTS（8.0 已于 2026-04 停止维护）、Redis 设置 requirepass 并开启 AOF。
+  - 健康检查分两类：存活探针只看进程，就绪探针检查 DB 和 Redis。
+  - 每个容器都设置了内存上限、日志轮转和 `no-new-privileges`。
+  - 只有 nginx 映射到宿主机，默认绑定 `127.0.0.1`。
+- **后端容器**以非 root 用户运行，时区为 UTC。
+- **nginx**：加了 CSP 等安全头；静态资源长缓存，入口页不缓存；登录接口按 IP 限速；SSE 关闭缓冲。
+- **配套脚本**：
+  - `gen-secrets.sh`：生成全部随机密钥，文件权限 600。
+  - `backup.sh`：一致性快照加附件卷备份，带校验和。
+  - `smoke-test.sh`：部署后只读冒烟测试。
+  - 部署手册 `deploy/README.md`，含发版、恢复演练、密钥轮换。
+
+## 二、未整改（按风险排序，建议排期）
+
+### P1：上线前或上线初期处理
+
+1. **对象级越权（IDOR）**：
+   - 项目、阶段、问题、附件的读接口按 ID 访问时，没有按 `project_members` 校验读权限；非财务附件只要有下载权限，按 ID 就能读。
+   - 修法：统一加 `requireProjectRead(actor, projectId)`。
+   - 需要先和业务确认：所有员工能不能看所有项目？如果能，这条可以降级。
+2. **集成测试没有进 CI**：2026-11-24 已补齐对真实部署栈的端到端测试（`deploy/e2e/`，共 810 条，覆盖并发不超付、幂等、权限矩阵），但需要手工运行。还缺：
+   - 用 Testcontainers 起 MySQL，在 `mvn verify` 里验证 schema 的约束和触发器。
+   - 把 `deploy/e2e/` 接进 CI，每次发版前自动跑。
+3. **两张表无限增长**：`idempotency_keys`、`event_outbox` 没有清理任务，需要加定时任务分批删除。
+4. **SSE 按连接轮询数据库**：每个连接每秒查 4 次，负载随在线人数线性增长。改成一个全局轮询器，再分发给各连接。
+5. **登录审计**：登录成功、失败、锁定都没有写审计。
+6. **前端金额用浮点计算**：`qty*price` 和 `reduce` 累加都是浮点运算，输入框也不限制小数位。改为整数分或 decimal.js；合计以后端返回为准。
+7. **下拉选项只取 100 条**：项目、往来单位、用户超过 100 条时会被悄悄截掉。改为远程搜索。
+
+### P2：持续改进
+
+- **Pig 表的时间**：`sys_user` 写入用的是 `UTC_TIMESTAMP()`，而上游按本地时间解读，会差 8 小时。只影响展示。
+- **建号锁表**：`MAX(user_id)+1 FOR UPDATE` 会锁住整张表，改为自增主键。
+- **乐观锁没有兜底**：关键 UPDATE 加上 `AND version=?`，并检查影响行数。
+- **导出全量进内存**：改为流式读取，并设行数上限。报表必须带日期范围。
+- **全表扫描**：`LIKE '%q%'` 会全表扫描，数据量上来后改用全文索引。
+- **项目编号不能复用**：删除后编号仍被唯一键占用，和阶段表的软删除口径不一致。
+- **令牌存储**：令牌放在 sessionStorage，同时写进一个不带 HttpOnly 的 Cookie。可以改为服务端下发 HttpOnly Cookie，但这是较大的改造。
+- **上游页面没裁剪**：117 个上游页面（代码生成、客户端管理等）仍打进产物，后台菜单也能路由过去。
+- **依赖已停维**：codemirror 5、crypto-js、pinia-plugin-persist、eslint 8 已停止维护。
+
+### 架构层面，这一轮不处理
+
+- **单机部署**：没有高可用。MySQL 主从和多实例后端需要先把附件改成对象存储、SSE 改成共享事件源。
+- **监控告警空白**：建议接入 Prometheus 和 Grafana（actuator 已经有 health，可再加 metrics），并配置磁盘、备份、5xx 告警。
+- **没有 CI**：建议 GitHub Actions 每次 PR 跑 `mvn verify`、`npm ci && vite build` 和 `npm audit`。
+- **TLS 不在本栈内**：由前置网关负责，见部署手册。
+
+## 三、验证结果
+
+本机实测（Docker 29.8 / Compose v5.6，2026-11-23）：
+
+| 项目 | 结果 |
+|---|---|
+| 后端镜像构建 + 单元测试 | 94 个测试，0 失败，2 个跳过；镜像 `mold/backend:7c00320` |
+| 前端镜像构建 | `npm ci` + `vite build` 成功；`nginx -t` 通过；镜像 `mold/frontend:7c00320` 98MB |
+| 全栈启动 | mysql / redis / backend / nginx 四个服务均为 healthy |
+| MySQL 首次初始化 | 5 步全部完成；OAuth 客户端只剩 `mold`；`admin` 已锁定；`mold_app` 只有 DML 权限并强制 TLS |
+| 首个 OWNER 引导 | 已创建 `owner`，首次登录强制改密，写入审计 `BOOTSTRAP_OWNER` |
+| 冒烟测试 `deploy/smoke-test.sh` | **27 通过 / 0 失败**：探活、安全头、敏感路径 404、遗留客户端直调 oauth2 被拒、未认证 401、admin 无法登录、OWNER 登录、改密前业务接口与上游接口都返回 403、刷新令牌、注销后旧令牌失效、前端产物不含客户端密钥 |
+| 前端产物扫描 | 257 个 JS 文件中无客户端密钥、无 Basic 凭证、无 Clarity |
+| 日志敏感信息 | 关闭上游 `pig.mybatis.show-sql`（默认会把每条 SQL 连同口令哈希、金额打进日志）后，容器日志和文件日志中都没有 SQL 或哈希 |
+| `npm audit --omit=dev` | 2 个中危：`echarts < 6.1.0` 存在 XSS（GHSA-fgmj-fm8m-jvvx），`vue-echarts` 依赖它而连带。修复需要升级到 echarts 6 大版本，有破坏性，列入 P2。在升级之前，图表 tooltip、label 的 formatter 不要拼接未转义的用户输入 |
+
+部署过程中额外发现并修复的问题：
+
+1. **SQL 明细日志泄露**：上游默认开启 SQL 明细日志，会把口令哈希等写进日志，已在 prod 配置中关闭。
+2. **nginx 重复指令**：`proxy_read_timeout` 在公共片段和 SSE 段各写了一次，nginx 无法启动，已删掉公共片段里的那条。
+3. **前端构建网络**：容器访问 npm 官方源时连接被重置，已改为默认走镜像源并加重试，可以通过参数覆盖。
+
+## 四、业务逻辑与交互完善（2026-11-24）
+
+### 端到端测试发现并修复的缺陷
+
+| # | 问题 | 整改 |
+|---|---|---|
+| E1 | 冲正单还能再冲正，形成“冲正的冲正” | 冲正映射表去掉反向类别；`reverses_entry_id` 非空的流水再冲正返回 409 |
+| E2 | 作废或冲正关联采购的流水时不校验净付，可能让净付为负或超过采购额 | 先锁采购单（与付款同一加锁顺序），操作后净付必须在 `[0, 采购金额]`，否则 422 `OVER_PAYMENT` |
+| E3 | 采购单的付款列表对所有人返回全部流水，绕过了“无 `cash:viewAll` 只看本人录入” | 付款列表按录入人过滤，与收支流水口径一致 |
+| E4 | 项目导出只校验 `project:list`，只读角色也能导出 | 改为校验 `project:export` |
+| E5 | 只读角色（VIEWER）被授予异常的登记、编辑、作废、处理权限 | 种子与库同时收回（`mold_viewer_readonly.sql`），清理 Redis 权限缓存 |
+
+### 按业务决策新增的功能
+
+| 决策 | 实现 |
+|---|---|
+| 误建阶段可作废 | `POST /mold/stages/{id}/void`：仅“未开始”阶段；必须填原因；阶段上有未解决异常时 409 `STAGE_HAS_OPEN_ISSUES`；作废即软删，不计入阶段数和完工检查，阶段事件与审计保留，同名阶段可重建。详情页阶段列表加“作废”按钮 |
+| 项目可暂停、恢复、取消；重开暂不开放 | `POST /mold/projects/{id}/hold`、`/resume`、`/cancel`：需 If-Match 与 Idempotency-Key；暂停与取消必须填原因（写入审计）；取消为终态，之后不能编辑、加阶段、推进或完工。项目操作菜单加三项，取消前二次确认 |
+| 老板可直接操作他人负责的项目 | 编辑、完工、成员、阶段增改与推进、异常处理、暂停/取消均放行 OWNER；前端按钮条件同步 |
+| 只有老板能变更项目负责人 | 收回 PM 的 `mold:project:owner`（`mold_owner_transfer_only.sql`） |
+
+### 浏览器实操（Chrome，6 个角色；脚本 `deploy/e2e/ui_walk.cjs`，截图输出到 `deploy/e2e/ui_walk_out/`）
+
+- 每个角色登录后菜单与角色一致，八个业务页在有权限时正常加载，无权限时显示提示而不报错；页面无脚本异常、无 5xx。
+- 详情页按钮：老板、负责人可见编辑、完工、作废阶段、暂停、取消；只有老板可见“变更负责人”；其他角色只显示“无写操作权限”；只读角色看不到“登记异常”。
+- 真实点击暂停 → 恢复 → 作废阶段 → 取消：未填原因时提示必填；成功后提示正确、状态标签更新、阶段列表减少一项；取消后写操作按钮全部消失。
+- 实操中修复：已取消项目的“整单完工”卡片仍写着“两项满足后由负责人确认”，改为“项目已取消并关闭”；各页无权限提示里直接写了 `mold:xxx:list` 权限代码，改为员工能看懂的话。
+- 实操中修复：采购台账、财务收支、账号管理、审计日志四页在没有查看权限时仍会先请求接口，再根据 403 显示无权限面板，控制台和网络面板里留下报错。现在改为先判断权限，没有权限就直接显示面板，不发请求；权限接口因网络故障拿不到时仍照常请求，由服务端裁决。复测：6 个角色 × 8 个页面，0 个 403、0 条控制台报错。
+- 采购台账按 2026-11-15 的决定从菜单隐藏，直达链接保留，这是有意为之。
+
+### 本轮验证
+
+| 项目 | 结果 |
+|---|---|
+| 后端单元测试 | 114 通过，0 失败，2 跳过（新增 `ProjectStatusChangeTest` 10 条：暂停/恢复/取消的合法与非法流转、必填原因、版本冲突、非负责人拒绝、老板放行、审计含原因；`StageVoidTest` 8 条：仅未开工可作废、必填原因、有未解决异常不可作废、版本冲突、权限、项目已关闭不可作废、软删与阶段事件） |
+| 决策回归 `deploy/e2e/decisions_flow.py`（新增） | 73 / 73 |
+| 业务流程 `business_flow.py` | 213 / 213 |
+| 权限矩阵 `perm_matrix.py`（67 个接口 × 6 角色） | 415 / 415 |
+| 采购流程 `purchase_flow.py` | 87 / 87 |
+| 采购并发超付 `purchase_concurrency.py` | 22 / 22 |
+| 冒烟 `smoke-test.sh` | 24 / 25：唯一失败是老板账号仍可用 `.env` 里的初始密码登录，见下 |
+
+冒烟脚本本身修了一处：变量后紧跟中文冒号时 bash 会把冒号的字节当成变量名，脚本中途退出，已改为 `${var}` 写法。账号已改过密时，“改密前接口被拦”不再适用，脚本改为提示“初始密码仍可登录”。
+
+### 上线前必须处理
+
+1. **修改老板密码**：`owner` 已清除强制改密标志，但密码仍是 `deploy/.env` 里的初始值，能读到 `.env` 的人就能以老板身份登录。请在系统右上角“修改密码”中更换，之后可删除 `.env` 中的 `MOLD_BOOTSTRAP_OWNER_PASSWORD`。
+2. **已有库执行增量 SQL**（新库由初始化脚本自动执行，两份都是幂等的）：`pig/db/mold_viewer_readonly.sql`、`pig/db/mold_owner_transfer_only.sql`，执行后清理 Redis 中的 `gl:menu_details::*` 与 `gl:user_details::*`。

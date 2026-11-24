@@ -59,10 +59,10 @@ public class ProjectController {
 
 	/**
 	 * 全量导出（D1）：当前筛选条件下一次取全部行，不受 pageSize 上限影响；CSV 流式输出。
-	 * 可见性跟列表一致（mold:project:list），避免导出比列表更窄。
+	 * 需要导出权限（mold:project:export）；导出行的可见范围与列表一致。
 	 */
 	@GetMapping("/export")
-	@PreAuthorize("@pms.hasPermission('mold:project:list')")
+	@PreAuthorize("@pms.hasPermission('mold:project:export')")
 	public ResponseEntity<StreamingResponseBody> export(@RequestParam(required = false) String sort,
 			@RequestParam(required = false) String order, @RequestParam(required = false) String status,
 			@RequestParam(required = false) String businessType, @RequestParam(required = false) String ownerUserId,
@@ -125,7 +125,8 @@ public class ProjectController {
 	}
 
 	@GetMapping("/{projectId}/members")
-	@PreAuthorize("@pms.hasPermission('mold:project:member')")
+	// 能看项目详情就能看成员（详情页成员卡片对编程、操机、财务、只读也要显示）；改成员仍要 member 权限
+	@PreAuthorize("@pms.hasPermission('mold:project:member', 'mold:project:list')")
 	public R<Map<String, Object>> members(@PathVariable String projectId) {
 		return R.ok(projectService.members(projectId));
 	}
@@ -157,6 +158,44 @@ public class ProjectController {
 		IdempotencyService.Outcome outcome = idempotencyService.executeRequired("project.complete", idempotencyKey,
 				"POST /mold/projects/" + projectId + "/complete|" + ifMatch, body, 200,
 				() -> projectService.complete(projectId, MoldIfMatch.parse(ifMatch), body));
+		markReplayed(response, outcome);
+		return R.ok(outcome.data());
+	}
+
+	@PostMapping("/{projectId}/hold")
+	@PreAuthorize("@pms.hasPermission('mold:project:update')")
+	public R<Map<String, Object>> hold(@PathVariable String projectId,
+			@RequestHeader(value = "If-Match", required = false) String ifMatch,
+			@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+			@RequestBody(required = false) Map<String, Object> body, HttpServletResponse response) {
+		return changeStatus("HOLD", projectId, ifMatch, idempotencyKey, body, response);
+	}
+
+	@PostMapping("/{projectId}/resume")
+	@PreAuthorize("@pms.hasPermission('mold:project:update')")
+	public R<Map<String, Object>> resume(@PathVariable String projectId,
+			@RequestHeader(value = "If-Match", required = false) String ifMatch,
+			@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+			@RequestBody(required = false) Map<String, Object> body, HttpServletResponse response) {
+		return changeStatus("RESUME", projectId, ifMatch, idempotencyKey, body, response);
+	}
+
+	@PostMapping("/{projectId}/cancel")
+	@PreAuthorize("@pms.hasPermission('mold:project:update')")
+	public R<Map<String, Object>> cancel(@PathVariable String projectId,
+			@RequestHeader(value = "If-Match", required = false) String ifMatch,
+			@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+			@RequestBody(required = false) Map<String, Object> body, HttpServletResponse response) {
+		return changeStatus("CANCEL", projectId, ifMatch, idempotencyKey, body, response);
+	}
+
+	private R<Map<String, Object>> changeStatus(String action, String projectId, String ifMatch,
+			String idempotencyKey, Map<String, Object> body, HttpServletResponse response) {
+		Map<String, Object> safeBody = body == null ? new java.util.LinkedHashMap<>() : body;
+		String path = action.toLowerCase();
+		IdempotencyService.Outcome outcome = idempotencyService.executeRequired("project." + path, idempotencyKey,
+				"POST /mold/projects/" + projectId + "/" + path + "|" + ifMatch, safeBody, 200,
+				() -> projectService.changeStatus(projectId, action, MoldIfMatch.parse(ifMatch), safeBody));
 		markReplayed(response, outcome);
 		return R.ok(outcome.data());
 	}

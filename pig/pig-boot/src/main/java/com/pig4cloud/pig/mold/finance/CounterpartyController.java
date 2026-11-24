@@ -36,7 +36,8 @@ public class CounterpartyController {
 	private final IdempotencyService idempotencyService;
 
 	@GetMapping
-	@PreAuthorize("@pms.hasPermission('mold:purchase:list')")
+	// 记账人（mold:cash:create）录客户收款必须选客户，只读列表一并放行；增改仍按 counterparty 权限
+	@PreAuthorize("@pms.hasPermission('mold:purchase:list', 'mold:cash:create')")
 	public R<Map<String, Object>> list(@RequestParam(required = false) String pageNum,
 			@RequestParam(required = false) String pageSize, @RequestParam(required = false) String sort,
 			@RequestParam(required = false) String order, @RequestParam(required = false) String type) {

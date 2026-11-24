@@ -55,7 +55,7 @@ export interface MoldProjectRow {
 }
 
 export type MoldIssueSeverity = 'LOW' | 'MEDIUM' | 'HIGH';
-export type MoldIssueStatus = 'OPEN' | 'HANDLING' | 'RESOLVED' | 'CANCELLED';
+export type MoldIssueStatus = 'OPEN' | 'RESOLVED' | 'CANCELLED';
 
 /** 项目异常（契约 6.7 GET /issues） */
 export interface MoldIssueRow {
@@ -391,6 +391,54 @@ export async function completeProject(
 		throw err instanceof MoldApiError ? err : toApiError(err);
 	}
 	return unwrap(res) as MoldProjectRow;
+}
+
+/** 项目状态变更：hold 暂停 / resume 恢复 / cancel 取消（If-Match + Idempotency-Key；暂停与取消必须填原因） */
+export type MoldProjectStatusAction = 'hold' | 'resume' | 'cancel';
+
+export async function changeProjectStatus(
+	id: string,
+	action: MoldProjectStatusAction,
+	reason: string | null,
+	version: number,
+	idempotencyKey?: string
+): Promise<MoldProjectRow> {
+	let res: any;
+	try {
+		res = await moldClient.post(
+			`/admin/mold/projects/${encodeURIComponent(id)}/${action}`,
+			reason ? { reason } : {},
+			{
+				headers: {
+					'If-Match': versionHeader(version),
+					'Idempotency-Key': idempotencyKey || newIdempotencyKey(),
+				},
+			}
+		);
+	} catch (err) {
+		throw err instanceof MoldApiError ? err : toApiError(err);
+	}
+	return unwrap(res) as MoldProjectRow;
+}
+
+/** 作废未开工阶段（必须填原因；作废后不再计入阶段数与完工检查，历史记录保留） */
+export async function voidProjectStage(stageId: string, reason: string, version: number, idempotencyKey?: string): Promise<any> {
+	let res: any;
+	try {
+		res = await moldClient.post(
+			`/admin/mold/stages/${encodeURIComponent(stageId)}/void`,
+			{ reason },
+			{
+				headers: {
+					'If-Match': versionHeader(version),
+					'Idempotency-Key': idempotencyKey || newIdempotencyKey(),
+				},
+			}
+		);
+	} catch (err) {
+		throw err instanceof MoldApiError ? err : toApiError(err);
+	}
+	return unwrap(res);
 }
 
 export async function addProjectStage(

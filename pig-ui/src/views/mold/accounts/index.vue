@@ -54,7 +54,7 @@
 						v-if="state === 'forbidden'"
 						kind="forbidden"
 						title="无账号管理权限"
-						description="当前账号没有 mold:user:list 权限（仅 OWNER）。服务端仍会对每个请求重新鉴权。"
+						description="账号管理只有老板可以使用。"
 						action-text="返回首页"
 						@action="goHome"
 					/>
@@ -314,7 +314,7 @@ import { useMoldList } from '/@/utils/moldList';
 import { beginIdempotentAction, finishIdempotentAction, stableHash } from '/@/utils/idempotency';
 
 const router = useRouter();
-const { can, ensureLoaded, meId } = useMoldPermissions();
+const { can, ensureLoaded, meId, unreachable } = useMoldPermissions();
 
 const canCreate = computed(() => can('mold:user:create'));
 const canUpdate = computed(() => can('mold:user:update'));
@@ -568,8 +568,18 @@ function onRowCommand(command: string, row: MoldUserAccount) {
 	else if (command === 'password') openPassword(row);
 }
 
-onMounted(() => {
-	ensureLoaded();
+/**
+ * 没有查看权限时直接显示无权限面板，不再请求接口，避免控制台和网络面板留下 403。
+ * 权限接口因网络故障拿不到时不当作「无权限」，仍照常请求，由服务端裁决。
+ */
+const noViewAccess = computed(() => !unreachable.value && !can('mold:user:list'));
+
+onMounted(async () => {
+	await ensureLoaded();
+	if (noViewAccess.value) {
+		state.value = 'forbidden';
+		return;
+	}
 	list.load(true);
 });
 </script>

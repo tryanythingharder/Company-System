@@ -9,6 +9,11 @@ logs/
 .DS_Store
 .env.local
 .env.*.local
+# 生产部署密钥与备份（deploy/gen-secrets.sh 生成，绝不入库）
+deploy/.env
+deploy/backups/
 .idea/
 .vscode/
 *.iml
+
+deploy/e2e/ui_walk_out/

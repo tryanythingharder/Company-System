@@ -1,17 +1,94 @@
-# 生产 profile 模板（与 m2 组合使用：--spring.profiles.active=m2,prod）
+# 生产 profile（与 m2 组合使用：--spring.profiles.active=m2,prod，prod 在后覆盖 m2）
 #
-# 本文件不含任何真实密钥；只声明必须由部署环境注入的配置项。
-# 缺失 MOLD_AUTH_CLIENT_SECRET 时 Spring 无法解析占位符，应用启动失败（fail-fast），
-# 避免生产静默使用开发默认值 mold。
+# 本文件不含任何真实密钥；凡是密钥都只声明占位符、不给默认值：
+# 缺任一环境变量 Spring 无法解析占位符，应用启动失败（fail-fast），避免生产静默使用开发默认值。
+# 另有 MoldProdSecretsGuard 在启动时拒绝已知的开发默认值与弱口令。
 #
-# 密钥生成与轮换步骤见 pig/docs/m6-backend-prep-20261113.md 第 2 节。
+# 必填环境变量（docker compose 从 deploy/.env 注入，模板见 deploy/.env.example）：
+#   MOLD_DB_USER / MOLD_DB_PASSWORD            业务库最小权限账号（不是 root）
+#   MOLD_REDIS_PASSWORD                        Redis requirepass
+#   MOLD_AUTH_CLIENT_SECRET                    OAuth 客户端密钥（base64url，>= 32 字符）
+#   MOLD_ENCODE_KEY                            Pig 登录报文加密根密钥（16 位）
+#   MOLD_JASYPT_PASSWORD                       配置加密根密码
 # 密钥不得写入本文件、仓库、日志或聊天。
+
+server:
+  shutdown: graceful
+  tomcat:
+    max-swallow-size: 12MB
+    connection-timeout: 20s
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 25s
+  servlet:
+    multipart:
+      # 业务上限 10MB（AttachmentService），这里只留少量余量，避免 100MB 请求打满内存
+      max-file-size: 11MB
+      max-request-size: 12MB
+  data:
+    redis:
+      host: ${MOLD_REDIS_HOST:redis}
+      port: ${MOLD_REDIS_PORT:6379}
+      database: ${MOLD_REDIS_DB:0}
+      password: ${MOLD_REDIS_PASSWORD}
+      timeout: 3s
+  datasource:
+    druid:
+      username: ${MOLD_DB_USER}
+      password: ${MOLD_DB_PASSWORD}
+      # 去掉 allowMultiQueries（放大 SQL 注入危害）；默认要求 TLS（MySQL 8.4 自动生成证书）
+      url: jdbc:mysql://${MOLD_DB_HOST:mysql}:${MOLD_DB_PORT:3306}/${MOLD_DB_NAME:mold_dev}?characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&sslMode=${MOLD_DB_SSL_MODE:REQUIRED}&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&nullCatalogMeansCurrent=true&allowPublicKeyRetrieval=false
+      # 连接池：Druid 默认 maxActive=8、maxWait=-1（无限等待），SSE 轮询会把池耗尽并挂死所有请求线程
+      initial-size: 5
+      min-idle: 5
+      max-active: ${MOLD_DB_POOL_MAX:30}
+      max-wait: 3000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      keep-alive: true
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      # Druid 监控页与 Web 统计一律关闭（上游 /druid/** 曾在免认证白名单）
+      stat-view-servlet:
+        enabled: false
+      web-stat-filter:
+        enabled: false
+
+file:
+  local:
+    base-path: ${MOLD_FILE_PATH:/app/data/files}
+
+security:
+  encodeKey: ${MOLD_ENCODE_KEY}
+  oauth2:
+    client:
+      # 生产免认证路径收口：去掉 /druid/**、/actuator/**、/code/**、文档路径。
+      # /token/** 仅供本服务内部吊销 token（AuthService.logout），对外由 nginx 屏蔽。
+      ignore-urls:
+        - /error
+        - /token/**
+        - /auth/login
+        - /auth/refresh
+        - /auth/logout
+        - /healthz
+        - /actuator/health
+
+jasypt:
+  encryptor:
+    password: ${MOLD_JASYPT_PASSWORD}
+
 mold:
   auth:
     client-id: ${MOLD_AUTH_CLIENT_ID:mold}
     client-secret: ${MOLD_AUTH_CLIENT_SECRET}
+    trusted-proxy-ips: ${MOLD_TRUSTED_PROXY_IPS:127.0.0.1,::1}
+    rate-limit-per-minute: ${MOLD_LOGIN_RATE_PER_MINUTE:30}
+    ip-rate-limit-per-minute: ${MOLD_LOGIN_IP_RATE_PER_MINUTE:60}
 
-# 生产不暴露 actuator / OpenAPI / Swagger UI；只保留健康检查。
+# 生产不暴露 OpenAPI / Swagger UI；actuator 只保留 health（就绪探针，含 DB/Redis）。
+# /healthz 为存活探针（不查依赖）；/actuator/health 为就绪探针。nginx 对外不暴露 actuator。
 management:
   endpoints:
     web:
@@ -21,6 +98,7 @@ management:
         enabled: false
   endpoint:
     health:
+      access: read-only
       show-details: never
 
 springdoc:
@@ -28,3 +106,14 @@ springdoc:
     enabled: false
   swagger-ui:
     enabled: false
+
+# 上游 Pig 默认 show-sql=true：每条 SQL 连同参数完整打印（含口令哈希、金额等），生产必须关闭
+pig:
+  mybatis:
+    show-sql: false
+
+logging:
+  file:
+    path: ${MOLD_LOG_PATH:/app/logs}
+  level:
+    root: INFO

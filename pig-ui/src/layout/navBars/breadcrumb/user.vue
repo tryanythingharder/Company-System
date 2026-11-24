@@ -64,7 +64,7 @@
 			<template #dropdown>
 					<el-dropdown-menu>
 						<el-dropdown-item command="/home">{{ $t('user.dropdown1') }}</el-dropdown-item>
-	          <el-dropdown-item command="personal">{{ $t('user.dropdown2') }}</el-dropdown-item>
+						<el-dropdown-item command="changePassword">{{ $t('user.dropdown2') }}</el-dropdown-item>
 						<el-dropdown-item divided command="logOut">{{ $t('user.dropdown5') }}</el-dropdown-item>
 					</el-dropdown-menu>
 			</template>
@@ -72,7 +72,6 @@
 		</div>
 			<Search ref="searchRef" />
 			<global-websocket uri="/admin/ws/info" v-if="websocketEnable" @rollback="rollback" />
-			<personal-drawer ref="personalDrawerRef"></personal-drawer>
 		</div>
 	</template>
 
@@ -94,7 +93,6 @@ import { Session } from '/@/utils/storage';
 const GlobalWebsocket = defineAsyncComponent(() => import('/@/components/Websocket/index.vue'));
 const UserNews = defineAsyncComponent(() => import('/@/layout/navBars/breadcrumb/userNews.vue'));
 const Search = defineAsyncComponent(() => import('/@/layout/navBars/breadcrumb/search.vue'));
-const PersonalDrawer = defineAsyncComponent(() => import('/@/views/admin/system/user/components/personal.vue'));
 const NameAvatar = defineAsyncComponent(() => import('/@/components/NameAvatar/index.vue'));
 
 const { t } = useI18n();
@@ -104,7 +102,6 @@ const { userInfos } = storeToRefs(stores);
 const { themeConfig } = storeToRefs(useThemeConfig());
 const searchRef = ref();
 const newsRef = ref();
-const personalDrawerRef = ref();
 
 const deptList = ref<Dept[]>([]);
 const avatarError = ref(false);
@@ -168,9 +165,10 @@ const onHandleCommandClick = (path: string) => {
 				}
 			})
 			.catch(() => {});
-		} else if (path === 'personal') {
-			// 打开个人页面
-			personalDrawerRef.value.open();
+		} else if (path === 'changePassword') {
+			// 上游“个人中心”走 /admin/user/personal/*，绕过本系统口令规则与审计，资料保存还会 500；
+			// 改为进入本系统自有改密页（自助模式，可返回）
+			router.push({ path: '/change-password', query: { mode: 'self', redirect: router.currentRoute.value.fullPath } });
 		} else {
 			router.push(path);
 		}

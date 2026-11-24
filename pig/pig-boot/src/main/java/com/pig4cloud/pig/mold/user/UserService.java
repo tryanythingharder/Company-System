@@ -273,7 +273,7 @@ public class UserService {
 				""", hash, userId);
 		jdbcTemplate.update("""
 				UPDATE sys_user
-				   SET password = ?, password_expire_flag = '0', lock_flag = '0',
+				   SET password = ?, password_expire_flag = '0',
 				       password_modify_time = UTC_TIMESTAMP()
 				 WHERE user_id = ?
 				""", hash, beforeRow.get("sys_user_id"));
@@ -333,7 +333,7 @@ public class UserService {
 				""", hash, actor.userId());
 		jdbcTemplate.update("""
 				UPDATE sys_user
-				   SET password = ?, password_expire_flag = '0', lock_flag = '0',
+				   SET password = ?, password_expire_flag = '0',
 				       password_modify_time = UTC_TIMESTAMP()
 				 WHERE user_id = ?
 				""", hash, beforeRow.get("sys_user_id"));

@@ -1,0 +1,14 @@
+# 构建上下文为仓库根目录（deploy/*.Dockerfile）；排除依赖、产物、密钥与运行数据
+.git
+**/node_modules
+**/target
+**/dist
+**/logs
+**/*.log
+**/.DS_Store
+**/.idea
+**/.vscode
+deploy/.env
+deploy/secrets
+deploy/backups
+pig-ui/docker/dist

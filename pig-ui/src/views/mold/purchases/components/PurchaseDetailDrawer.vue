@@ -19,7 +19,7 @@
 					</div>
 				</div>
 				<div class="mold-pd-head-actions">
-					<el-button v-if="canEdit" size="small" @click="emit('edit', purchase)">编辑</el-button>
+					<el-button v-if="canEdit && purchase && purchase.status !== 'VOID'" size="small" @click="emit('edit', purchase)">编辑</el-button>
 					<el-button
 						v-if="canConfirm && purchase?.status === 'DRAFT'"
 						size="small"
@@ -29,7 +29,7 @@
 					>
 						确认采购单
 					</el-button>
-					<el-button v-if="canVoid && purchase && purchase.status !== 'VOID'" size="small" type="danger" plain @click="openVoid">
+					<el-button v-if="canVoid && purchase && purchase.status !== 'VOID' && !hasActiveChildren" size="small" type="danger" plain @click="openVoid">
 						作废
 					</el-button>
 					<el-button size="small" :icon="Refresh" aria-label="刷新采购单" :loading="loading" @click="loadAll" />
@@ -365,6 +365,13 @@ const summary = ref<MoldPurchaseSummary | null>(null);
 const receipts = ref<MoldReceiptRow[]>([]);
 const invoices = ref<MoldInvoiceRow[]>([]);
 const payments = ref<MoldPurchasePayment[]>([]);
+// 与后端 PurchaseService.void 一致：仍有有效收货、发票或付款/退款时不能作废，按钮直接隐藏
+const hasActiveChildren = computed(
+	() =>
+		receipts.value.some((r) => r.status === 'ACTIVE') ||
+		invoices.value.some((i) => i.status === 'ACTIVE') ||
+		payments.value.some((p) => p.status === 'CONFIRMED')
+);
 const loading = ref(false);
 const acting = ref(false);
 const error = ref('');

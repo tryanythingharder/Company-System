@@ -104,7 +104,7 @@ export default {
 			dropdownDefault: 'Default',
 			dropdownSmall: 'Small',
 			dropdown1: 'Home Page',
-			dropdown2: 'Personal Center',
+			dropdown2: 'Change Password',
 			dropdown4: 'Department Switch',
 			dropdown5: 'Log Out',
 		searchPlaceholder: 'Menu Search: Supports Chinese and Routing Path',

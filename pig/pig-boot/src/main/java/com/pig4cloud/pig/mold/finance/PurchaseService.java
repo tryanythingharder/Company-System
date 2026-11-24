@@ -75,6 +75,8 @@ public class PurchaseService {
 
 	private final EventWriter eventWriter;
 
+	private final CashEntryService cashEntryService;
+
 	// ------------------------------------------------------------------ 查询
 
 	public Map<String, Object> list(PageQuery page, String projectId, String counterpartyId, String status,
@@ -171,8 +173,14 @@ public class PurchaseService {
 
 	public Map<String, Object> listPayments(String purchaseId) {
 		requirePurchase(purchaseId);
-		List<Map<String, Object>> rows = jdbcTemplate
-			.queryForList("SELECT * FROM cash_entries WHERE purchase_id = ? ORDER BY created_at, id", purchaseId)
+		// 与收支流水可见性一致：无 cash:viewAll 的用户只能看到自己录入的付款/退款
+		List<Map<String, Object>> raw = cashEntryService.canViewAll()
+				? jdbcTemplate.queryForList("SELECT * FROM cash_entries WHERE purchase_id = ? ORDER BY created_at, id",
+						purchaseId)
+				: jdbcTemplate.queryForList(
+						"SELECT * FROM cash_entries WHERE purchase_id = ? AND created_by = ? ORDER BY created_at, id",
+						purchaseId, actorResolver.current().userId());
+		List<Map<String, Object>> rows = raw
 			.stream()
 			.map(this::cashRowDto)
 			.toList();
@@ -408,6 +416,7 @@ public class PurchaseService {
 					FROM purchase_receipt_items ri
 					JOIN purchase_receipts r ON r.id = ri.receipt_id
 					WHERE ri.purchase_item_id = ? AND r.status = 'ACTIVE'
+					FOR SHARE
 					""", BigDecimal.class, item.purchaseItemId());
 			BigDecimal already = received == null ? BigDecimal.ZERO : received;
 			BigDecimal qty = (BigDecimal) purchaseItem.get("qty");
@@ -499,7 +508,7 @@ public class PurchaseService {
 			throw MoldApiException.validation("/body/taxAmount", "maximum", Map.of("limit",
 					MoldFields.money(amountTotal)), "税额不能超过价税合计");
 		}
-		BigDecimal invoiced = invoicedAmount(purchaseId);
+		BigDecimal invoiced = invoicedAmount(purchaseId, true);
 		BigDecimal purchaseAmount = (BigDecimal) purchase.get("amount_total");
 		if (invoiced.add(amountTotal).compareTo(purchaseAmount) > 0) {
 			Map<String, Object> details = new LinkedHashMap<>();
@@ -597,7 +606,7 @@ public class PurchaseService {
 		if (!currency.equals(purchase.get("currency"))) {
 			throw new MoldApiException(422, "CURRENCY_MISMATCH", "付款/退款币种必须与采购一致");
 		}
-		BigDecimal paid = paidAmount(purchaseId);
+		BigDecimal paid = paidAmount(purchaseId, true);
 		BigDecimal purchaseAmount = (BigDecimal) purchase.get("amount_total");
 		if ("OUT".equals(direction)) {
 			if (paid.add(amount).compareTo(purchaseAmount) > 0) {
@@ -713,18 +722,30 @@ public class PurchaseService {
 	}
 
 	private BigDecimal paidAmount(String purchaseId) {
+		return paidAmount(purchaseId, false);
+	}
+
+	/**
+	 * locking=true 用于写路径的额度校验：调用方已持有采购单行锁（FOR UPDATE），
+	 * 这里用锁定读（FOR SHARE）读取最新已提交数据，避免 RR 快照读到旧值导致并发超付。
+	 */
+	private BigDecimal paidAmount(String purchaseId, boolean locking) {
 		BigDecimal value = jdbcTemplate.queryForObject("""
 				SELECT COALESCE(SUM(CASE WHEN direction = 'OUT' THEN amount ELSE -amount END), 0)
 				FROM cash_entries WHERE purchase_id = ? AND status = 'CONFIRMED'
-				""", BigDecimal.class, purchaseId);
+				""" + (locking ? " FOR SHARE" : ""), BigDecimal.class, purchaseId);
 		return value == null ? BigDecimal.ZERO : value;
 	}
 
 	private BigDecimal invoicedAmount(String purchaseId) {
+		return invoicedAmount(purchaseId, false);
+	}
+
+	private BigDecimal invoicedAmount(String purchaseId, boolean locking) {
 		BigDecimal value = jdbcTemplate.queryForObject("""
 				SELECT COALESCE(SUM(amount_total), 0)
 				FROM purchase_invoices WHERE purchase_id = ? AND status = 'ACTIVE'
-				""", BigDecimal.class, purchaseId);
+				""" + (locking ? " FOR SHARE" : ""), BigDecimal.class, purchaseId);
 		return value == null ? BigDecimal.ZERO : value;
 	}
 

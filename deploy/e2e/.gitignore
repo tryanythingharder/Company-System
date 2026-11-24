@@ -1,0 +1,9 @@
+.accounts.json
+__pycache__/
+last_report.json
+.perm_accounts.json
+.perm_tokens.json
+purchase_*_report.json
+perm_*_report.json
+decisions_report.json
+ui_walk_out/

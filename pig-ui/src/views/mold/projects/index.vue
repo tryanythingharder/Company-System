@@ -137,7 +137,7 @@
 						v-if="state === 'forbidden'"
 						kind="forbidden"
 						title="无公司进度查看权限"
-						description="当前账号没有 mold:project:list 权限。服务端仍会对每个请求重新鉴权，前端隐藏入口不是安全控制。"
+						description="当前账号没有查看公司进度的权限。如需使用，请联系老板开通。"
 						action-text="返回首页"
 						@action="goHome"
 					/>

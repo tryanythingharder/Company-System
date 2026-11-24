@@ -129,7 +129,7 @@ import MoneyText from '/@/components/mold/MoneyText.vue';
 import { createPurchase, updatePurchase, type MoldCounterpartyRow, type MoldPurchaseItem, type MoldPurchaseRow } from '/@/api/mold/purchases';
 import { MoldApiError, type MoldProjectRow } from '/@/api/mold/projects';
 import { describeMoldError } from '/@/api/mold/errors';
-import { todayStamp } from '/@/utils/moldFormat';
+import { todayStamp, mulMoneyHalfUp, sumMoney } from '/@/utils/moldFormat';
 import { beginIdempotentAction, finishIdempotentAction, stableHash } from '/@/utils/idempotency';
 
 const props = defineProps<{
@@ -189,12 +189,9 @@ const rules = {
 	projectId: [{ required: true, message: '归属项目时必须选择项目', trigger: 'change' }],
 };
 
-const lineAmount = (item: MoldPurchaseItem) => {
-	const qty = Number(item.qty);
-	const price = Number(item.unitPrice);
-	return Number.isFinite(qty) && Number.isFinite(price) ? (qty * price).toFixed(2) : '0.00';
-};
-const totalAmount = computed(() => form.items.reduce((sum, item) => sum + Number(lineAmount(item)), 0).toFixed(2));
+// 与后端 BigDecimal HALF_UP 保持一致：按十进制整数运算，避免浮点 toFixed 差 1 分
+const lineAmount = (item: MoldPurchaseItem) => mulMoneyHalfUp(item.qty, item.unitPrice) ?? '0.00';
+const totalAmount = computed(() => sumMoney(form.items.map(lineAmount)));
 
 /** 空 PATCH 防护：编辑时无任何字段变化则禁用保存 */
 const noChanges = computed(() => {

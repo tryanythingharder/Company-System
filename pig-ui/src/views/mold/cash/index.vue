@@ -75,7 +75,7 @@
 								v-if="state === 'forbidden'"
 								kind="forbidden"
 								title="无财务收支查看权限"
-								description="当前账号没有 mold:cash:list 权限。服务端仍会对每个请求重新鉴权。"
+								description="当前账号没有查看财务收支的权限。如需使用，请联系老板开通。"
 								action-text="返回首页"
 								@action="goHome"
 							/>
@@ -182,11 +182,11 @@
 												<template #dropdown>
 													<el-dropdown-menu>
 														<el-dropdown-item v-if="canUpdate && row.status === 'CONFIRMED' && !row.reconciledAt" command="edit">编辑备注/凭证</el-dropdown-item>
-														<el-dropdown-item v-if="canCorrection && row.status === 'CONFIRMED'" command="correct">更正…</el-dropdown-item>
+														<el-dropdown-item v-if="canCorrection && canCorrectRow(row)" command="correct">更正…</el-dropdown-item>
 														<el-dropdown-item v-if="canReconcile && row.status === 'CONFIRMED' && !row.reconciledAt" command="reconcile">标记对账</el-dropdown-item>
 														<el-dropdown-item v-if="canReconcile && row.reconciledAt" command="unreconcile">取消对账</el-dropdown-item>
-														<el-dropdown-item v-if="canReverse && row.status === 'CONFIRMED' && !row.reversesEntryId" command="reverse">冲正</el-dropdown-item>
-														<el-dropdown-item v-if="canVoid && row.status === 'CONFIRMED' && !row.reconciledAt" command="void">作废</el-dropdown-item>
+														<el-dropdown-item v-if="canReverse && canReverseRow(row)" command="reverse">冲正</el-dropdown-item>
+														<el-dropdown-item v-if="canVoid && canVoidRow(row)" command="void">作废</el-dropdown-item>
 														<el-dropdown-item v-if="!hasRowAction(row)" disabled>无可执行操作</el-dropdown-item>
 													</el-dropdown-menu>
 												</template>
@@ -415,7 +415,7 @@ import { formatDate } from '/@/utils/moldFormat';
 import { beginIdempotentAction, finishIdempotentAction, stableHash } from '/@/utils/idempotency';
 
 const router = useRouter();
-const { can, ensureLoaded } = useMoldPermissions();
+const { can, ensureLoaded, unreachable } = useMoldPermissions();
 
 const canCreate = computed(() => can('mold:cash:create'));
 const canUpdate = computed(() => can('mold:cash:update'));
@@ -473,13 +473,34 @@ const projectMap = computed(() => {
 const counterpartyName = (id: string) => counterpartyMap.value.get(id)?.name || id.slice(0, 8);
 const projectName = (id: string) => projectMap.value.get(id)?.name || id.slice(0, 8);
 
+/*
+ * 行操作条件与后端保持一致（CashEntryService.void/reverse、CorrectionService.compute），
+ * 否则按钮能点、提交必 409：
+ *  - 已对账、已被红冲、本身是红冲单、已进入更正链：三种操作都不允许；
+ *  - 退款类流水不能再红冲，也暂不能更正。
+ */
+const REFUND_CATEGORIES = new Set(['CUSTOMER_REFUND', 'PURCHASE_REFUND', 'EXPENSE_REFUND', 'INCOME_REFUND']);
+function isLockedRow(row: MoldCashRow) {
+	return row.status !== 'CONFIRMED' || !!row.reconciledAt || !!row.reversedByEntryId || !!row.reversesEntryId;
+}
+function canVoidRow(row: MoldCashRow) {
+	return !isLockedRow(row) && !row.replacesEntryId && !row.replacedByEntryId;
+}
+function canReverseRow(row: MoldCashRow) {
+	return canVoidRow(row) && !REFUND_CATEGORIES.has(row.category);
+}
+function canCorrectRow(row: MoldCashRow) {
+	// 更正允许在“替代单”上继续更正（replacesEntryId），但已被替代的旧单不行
+	return !isLockedRow(row) && !row.replacedByEntryId && !REFUND_CATEGORIES.has(row.category);
+}
+
 function hasRowAction(row: MoldCashRow) {
 	return (
 		(canUpdate.value && row.status === 'CONFIRMED' && !row.reconciledAt) ||
-		(canCorrection.value && row.status === 'CONFIRMED') ||
+		(canCorrection.value && canCorrectRow(row)) ||
 		(canReconcile.value && row.status === 'CONFIRMED') ||
-		(canReverse.value && row.status === 'CONFIRMED' && !row.reversesEntryId) ||
-		(canVoid.value && row.status === 'CONFIRMED' && !row.reconciledAt)
+		(canReverse.value && canReverseRow(row)) ||
+		(canVoid.value && canVoidRow(row))
 	);
 }
 
@@ -731,14 +752,25 @@ async function loadLookups() {
 	if (results[1].status === 'fulfilled') counterparties.value = results[1].value.rows;
 }
 
-onMounted(() => {
-	ensureLoaded();
+/**
+ * 没有查看权限时直接显示无权限面板，不再请求接口，避免控制台和网络面板留下 403。
+ * 权限接口因网络故障拿不到时不当作「无权限」，仍照常请求，由服务端裁决。
+ */
+const noViewAccess = computed(() => !unreachable.value && !can('mold:cash:list'));
+
+onMounted(async () => {
+	await ensureLoaded();
+	if (noViewAccess.value) {
+		state.value = 'forbidden';
+		return;
+	}
 	list.load(true);
 	loadLookups();
 });
 
 /* SSE：流水/往来/采购变更只刷当前 Tab 的列表，报表 Tab 首次进入时再拉 */
 const refreshCashOnEvent = debounceRefresh(() => {
+	if (noViewAccess.value) return;
 	if (tab.value === 'entries') list.reload();
 	else if (canViewAll.value && report.value) loadReport();
 }, 700);

@@ -69,7 +69,7 @@
 								v-if="state === 'forbidden'"
 								kind="forbidden"
 								title="无采购台账查看权限"
-								description="当前账号没有 mold:purchase:list 权限。服务端仍会对每个请求重新鉴权。"
+								description="当前账号没有查看采购台账的权限。如需使用，请联系老板开通。"
 								action-text="返回首页"
 								@action="goHome"
 							/>
@@ -205,7 +205,7 @@
 								v-if="cpState === 'forbidden'"
 								kind="forbidden"
 								title="无往来单位查看权限"
-								description="当前账号没有 mold:purchase:list 权限。"
+								description="当前账号没有查看采购台账的权限。"
 								action-text="返回首页"
 								@action="goHome"
 							/>
@@ -345,7 +345,7 @@ import { useMoldList } from '/@/utils/moldList';
 import { formatDate } from '/@/utils/moldFormat';
 
 const router = useRouter();
-const { can, ensureLoaded } = useMoldPermissions();
+const { can, ensureLoaded, unreachable } = useMoldPermissions();
 
 const canCreatePurchase = computed(() => can('mold:purchase:create'));
 const canUpdatePurchase = computed(() => can('mold:purchase:update'));
@@ -534,8 +534,20 @@ function goHome() {
 	router.push('/home');
 }
 
-onMounted(() => {
-	ensureLoaded();
+/**
+ * 没有采购台账查看权限时直接显示无权限面板，不再请求采购列表和往来单位，
+ * 避免页面（以及晚到的请求）在控制台和网络面板留下 403。
+ * 权限接口因网络故障拿不到时不当作「无权限」，仍照常请求，由服务端裁决。
+ */
+const noPurchaseAccess = computed(() => !unreachable.value && !can('mold:purchase:list'));
+
+onMounted(async () => {
+	await ensureLoaded();
+	if (noPurchaseAccess.value) {
+		state.value = 'forbidden';
+		cpState.value = 'forbidden';
+		return;
+	}
 	list.load(true);
 	loadCounterparties(1);
 	loadProjects();
@@ -543,6 +555,7 @@ onMounted(() => {
 
 /* SSE：采购/收货/发票/往来变更只刷本页列表 */
 const refreshPurchaseOnEvent = debounceRefresh(() => {
+	if (noPurchaseAccess.value) return;
 	list.reload();
 	loadCounterparties(1);
 }, 700);

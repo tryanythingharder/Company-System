@@ -18,8 +18,6 @@ import { Local, Session } from '/@/utils/storage';
 import { ensureRemoteI18nLoaded } from '/@/i18n';
 import mittBus from '/@/utils/mitt';
 import setIntroduction from '/@/utils/setIconfont';
-import { initClarity } from '/@/utils/clarity';
-import { initAntiDebug } from '/@/utils/antiDebug';
 
 // 引入组件
 const LockScreen = defineAsyncComponent(() => import('/@/layout/lockScreen/index.vue'));
@@ -35,11 +33,8 @@ const storesThemeConfig = useThemeConfig();
 const { themeConfig } = storeToRefs(storesThemeConfig);
 const { siteConfig } = storeToRefs(useSiteConfig());
 
-// clarityId 变为 truthy 时立即初始化（whenever 默认 immediate，只在值非空时触发）
-whenever(() => siteConfig.value.clarityId, (id) => initClarity(id));
-
-// antiDebugEnable 开启时初始化反调试保护
-whenever(() => siteConfig.value.antiDebugEnable, () => initAntiDebug(siteConfig.value.antiDebugKey));
+// 生产加固：不加载 Microsoft Clarity 会话录制（会把金额、往来单位等页面内容传到第三方），
+// 也不启用 disable-devtool（绕过密钥公开、只妨碍排障）。
 
 
 // 设置锁屏时组件显示隐藏

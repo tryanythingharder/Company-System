@@ -62,7 +62,7 @@ public class CorrectionService {
 		}
 		cashEntryService.requireFullVisibility();
 		requireVersion(row, expectedVersion);
-		Correction correction = compute(row, body);
+		Correction correction = compute(row, body, false);
 
 		Map<String, Object> result = new LinkedHashMap<>();
 		result.put("entryId", row.get("id"));
@@ -77,13 +77,19 @@ public class CorrectionService {
 	@Transactional(rollbackFor = Exception.class)
 	public Map<String, Object> apply(String entryId, Integer expectedVersion, Map<String, Object> body) {
 		MoldActor actor = actorResolver.current();
+		// 锁顺序与付款/退款一致：先采购单、后流水，避免两条路径交叉加锁死锁；
+		// 持有采购单锁后，其余付款无法并发写入，下面的净付校验才可靠。
+		Map<String, Object> peek = cashEntryService.loadEntry(entryId, false);
+		if (peek != null && peek.get("purchase_id") != null) {
+			jdbcTemplate.queryForList("SELECT id FROM purchases WHERE id = ? FOR UPDATE", peek.get("purchase_id"));
+		}
 		Map<String, Object> row = cashEntryService.loadEntry(entryId, true);
 		if (row == null) {
 			throw new MoldApiException(404, "NOT_FOUND", "流水不存在");
 		}
 		cashEntryService.requireFullVisibility();
 		requireVersion(row, expectedVersion);
-		Correction correction = compute(row, body);
+		Correction correction = compute(row, body, true);
 
 		if (correction.purchase() != null && Boolean.TRUE.equals(correction.purchase().get("overPayment"))) {
 			Map<String, Object> details = new LinkedHashMap<>();
@@ -161,7 +167,7 @@ public class CorrectionService {
 
 	// ------------------------------------------------------------------ 共用校验与影响计算
 
-	private Correction compute(Map<String, Object> row, Map<String, Object> body) {
+	private Correction compute(Map<String, Object> row, Map<String, Object> body, boolean locking) {
 		if (row.get("reconciled_at") != null) {
 			throw new MoldApiException(409, "RECONCILED_ENTRY", "已对账流水不能更正");
 		}
@@ -183,7 +189,8 @@ public class CorrectionService {
 		Map<String, Object> purchaseRow = null;
 		if ("PURCHASE_PAYMENT".equals(category) && row.get("purchase_id") != null) {
 			List<Map<String, Object>> rows = jdbcTemplate
-				.queryForList("SELECT * FROM purchases WHERE id = ?", row.get("purchase_id"));
+				.queryForList("SELECT * FROM purchases WHERE id = ?" + (locking ? " FOR SHARE" : ""),
+						row.get("purchase_id"));
 			if (rows.isEmpty()) {
 				throw new MoldApiException(404, "NOT_FOUND", "采购单不存在");
 			}
@@ -210,7 +217,7 @@ public class CorrectionService {
 		}
 
 		Map<String, Object> impact = impactOf(row, replacement);
-		Map<String, Object> purchase = purchasePreview(row, purchaseRow, replacement);
+		Map<String, Object> purchase = purchasePreview(row, purchaseRow, replacement, locking);
 		return new Correction(mode, reason, replacement, impact, purchase);
 	}
 
@@ -328,7 +335,7 @@ public class CorrectionService {
 	}
 
 	private Map<String, Object> purchasePreview(Map<String, Object> row, Map<String, Object> purchaseRow,
-			Map<String, Object> replacement) {
+			Map<String, Object> replacement, boolean locking) {
 		if (purchaseRow == null) {
 			return null;
 		}
@@ -336,7 +343,7 @@ public class CorrectionService {
 				SELECT COALESCE(SUM(CASE WHEN direction = 'OUT' THEN amount ELSE -amount END), 0)
 				FROM cash_entries
 				WHERE purchase_id = ? AND status = 'CONFIRMED' AND id <> ?
-				""", BigDecimal.class, row.get("purchase_id"), row.get("id"));
+				""" + (locking ? " FOR SHARE" : ""), BigDecimal.class, row.get("purchase_id"), row.get("id"));
 		if (paidOther == null) {
 			paidOther = BigDecimal.ZERO;
 		}

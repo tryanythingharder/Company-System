@@ -105,7 +105,7 @@ import type { MoldCounterpartyRow as CpRow } from '/@/api/mold/purchases';
 import { MoldApiError, type MoldProjectRow } from '/@/api/mold/projects';
 import { describeMoldError } from '/@/api/mold/errors';
 import { useMoldPermissions } from '/@/api/mold/permissions';
-import { todayStamp } from '/@/utils/moldFormat';
+import { todayStamp, beijingCodeStamp } from '/@/utils/moldFormat';
 import { beginIdempotentAction, finishIdempotentAction, stableHash } from '/@/utils/idempotency';
 
 const props = defineProps<{
@@ -200,9 +200,6 @@ function onAllocationChange(value: string) {
 	if (value !== 'PROJECT') form.projectId = '';
 }
 
-function pad2(n: number) {
-	return String(n).padStart(2, '0');
-}
 
 /**
  * 自动流水号：SK-yyyyMMdd-HHmmss-XXX
@@ -210,8 +207,8 @@ function pad2(n: number) {
  * 若服务端仍判重（CASH_ENTRY_CODE_DUPLICATE）会自动换号并提示再次提交。
  */
 function generateCode(): string {
-	const d = new Date();
-	const stamp = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+	// 按北京时间取号，异地/海外设备打开也不会生成错位日期的流水号
+	const stamp = beijingCodeStamp();
 	const rand = Math.random().toString(36).slice(2, 5).toUpperCase().padEnd(3, '0');
 	return `SK-${stamp}-${rand}`;
 }

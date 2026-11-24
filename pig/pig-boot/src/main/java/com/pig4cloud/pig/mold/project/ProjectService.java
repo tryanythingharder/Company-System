@@ -164,8 +164,8 @@ public class ProjectService {
 		if (beforeRow == null) {
 			throw new MoldApiException(404, "NOT_FOUND", "项目不存在或已删除");
 		}
-		if (!actor.userId().equals(beforeRow.get("owner_user_id"))) {
-			throw new MoldApiException(403, "NOT_PROJECT_OWNER", "仅该项目负责人可维护该项目");
+		if (!isManager(actor, beforeRow)) {
+			throw new MoldApiException(403, "NOT_PROJECT_OWNER", "仅该项目负责人或老板可维护该项目");
 		}
 		requireEditable(beforeRow);
 
@@ -388,8 +388,8 @@ public class ProjectService {
 		if (beforeRow == null) {
 			throw new MoldApiException(404, "NOT_FOUND", "项目不存在或已删除");
 		}
-		if (!actor.userId().equals(beforeRow.get("owner_user_id"))) {
-			throw new MoldApiException(403, "NOT_PROJECT_OWNER", "仅该项目指定负责人可确认整单完工");
+		if (!isManager(actor, beforeRow)) {
+			throw new MoldApiException(403, "NOT_PROJECT_OWNER", "仅该项目负责人或老板可确认整单完工");
 		}
 		String currentStatus = (String) beforeRow.get("status");
 		if (!"ACTIVE".equals(currentStatus) && !"ON_HOLD".equals(currentStatus)) {
@@ -457,10 +457,87 @@ public class ProjectService {
 	}
 
 	/**
+	 * 项目状态变更（2026-11 拍板）：暂停 ACTIVE→ON_HOLD、恢复 ON_HOLD→ACTIVE、取消 ACTIVE/ON_HOLD→CANCELLED。
+	 * 仅该项目负责人或老板（OWNER）；暂停与取消必须填写原因（记入审计）；取消为终态，重开暂不开放。
+	 */
+	@Transactional(rollbackFor = Exception.class)
+	public Map<String, Object> changeStatus(String projectId, String action, Integer expectedVersion,
+			Map<String, Object> body) {
+		MoldActor actor = actorResolver.current();
+		Map<String, Object> beforeRow = loadRow(projectId, true);
+		if (beforeRow == null) {
+			throw new MoldApiException(404, "NOT_FOUND", "项目不存在或已删除");
+		}
+		if (!isManager(actor, beforeRow)) {
+			throw new MoldApiException(403, "NOT_PROJECT_OWNER", "仅该项目负责人或老板可变更项目状态");
+		}
+		String current = (String) beforeRow.get("status");
+		String target;
+		List<String> from;
+		switch (action) {
+			case "HOLD" -> {
+				target = "ON_HOLD";
+				from = List.of("ACTIVE");
+			}
+			case "RESUME" -> {
+				target = "ACTIVE";
+				from = List.of("ON_HOLD");
+			}
+			case "CANCEL" -> {
+				target = "CANCELLED";
+				from = List.of("ACTIVE", "ON_HOLD");
+			}
+			default -> throw new IllegalArgumentException("unknown action " + action);
+		}
+		if (!from.contains(current)) {
+			Map<String, Object> details = new LinkedHashMap<>();
+			details.put("conflictKind", "PROJECT_STATE");
+			details.put("resourceType", "PROJECT");
+			details.put("resourceId", projectId);
+			details.put("currentStatus", current);
+			details.put("requestedAction", action);
+			details.put("allowedFromStatuses", from);
+			throw new MoldApiException(409, "INVALID_STATE_TRANSITION", "当前项目状态不允许该操作", details);
+		}
+		int currentVersion = ((Number) beforeRow.get("version")).intValue();
+		if (expectedVersion == null) {
+			throw MoldApiException.validation("/header/If-Match", "required", null, "缺少 If-Match 版本号");
+		}
+		if (expectedVersion != currentVersion) {
+			Map<String, Object> details = new LinkedHashMap<>();
+			details.put("current", currentVersion);
+			throw new MoldApiException(409, "VERSION_CONFLICT", "版本冲突，请刷新后重试", details);
+		}
+		Map<String, Object> safeBody = body == null ? Map.of() : body;
+		rejectUnknownFields(safeBody, Set.of("reason"));
+		String reason = "RESUME".equals(action) ? optionalText(safeBody.get("reason"), "reason", 2000)
+				: text(safeBody.get("reason"), "reason", 2000);
+
+		Map<String, Object> before = dto(beforeRow);
+		jdbcTemplate.update("""
+				UPDATE projects
+				   SET status = ?, version = version + 1, updated_at = UTC_TIMESTAMP(3), updated_by = ?
+				 WHERE id = ?
+				""", target, actor.userId(), projectId);
+		Map<String, Object> after = dto(loadRow(projectId, false));
+		Map<String, Object> auditAfter = new LinkedHashMap<>(after);
+		auditAfter.put("statusReason", reason);
+		auditWriter.record("PROJECT", projectId, action, before, auditAfter);
+		eventWriter.emit("project.status.changed", "PROJECT", projectId, projectId, null, actor.userId(),
+				number(after.get("version")), "BASIC", target, current, List.of("status"));
+		return after;
+	}
+
+	/**
 	 * 项目重开属旧系统 closedOperations，业务规则未确认：一律 409 POLICY_NOT_CONFIRMED，不写任何数据。
 	 */
 	public void reopen(String projectId) {
 		throw new MoldApiException(409, "POLICY_NOT_CONFIRMED", "项目重开规则尚未确认，本地版本关闭该操作");
+	}
+
+	/** 项目负责人本人，或老板（OWNER，2026-11 拍板：可直接操作任意项目）。 */
+	private static boolean isManager(MoldActor actor, Map<String, Object> project) {
+		return actor.roles().contains("OWNER") || actor.userId().equals(project.get("owner_user_id"));
 	}
 
 	private Map<String, Object> loadRow(String projectId, boolean forUpdate) {
@@ -470,8 +547,8 @@ public class ProjectService {
 	}
 
 	private void requireProjectOwner(MoldActor actor, Map<String, Object> project) {
-		if (!actor.userId().equals(project.get("owner_user_id"))) {
-			throw new MoldApiException(403, "NOT_PROJECT_OWNER", "仅该项目负责人可维护成员");
+		if (!isManager(actor, project)) {
+			throw new MoldApiException(403, "NOT_PROJECT_OWNER", "仅该项目负责人或老板可维护成员");
 		}
 	}
 

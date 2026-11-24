@@ -22,6 +22,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -46,6 +49,8 @@ public class AuthService {
 
 	private final AccountStatusGate accountStatusGate;
 
+	private final OAuth2AuthorizationService authorizationService;
+
 	private final RestClient restClient;
 
 	/** OAuth 客户端 ID（默认 mold）；生产由配置覆盖。 */
@@ -55,7 +60,7 @@ public class AuthService {
 	private final String clientSecret;
 
 	public AuthService(ObjectMapper objectMapper, MoldActorResolver actorResolver, LoginRateLimiter rateLimiter,
-			AccountStatusGate accountStatusGate,
+			AccountStatusGate accountStatusGate, OAuth2AuthorizationService authorizationService,
 			@Value("${server.port:9999}") int serverPort,
 			@Value("${server.servlet.context-path:}") String contextPath,
 			@Value("${mold.auth.client-id:mold}") String clientId,
@@ -64,6 +69,7 @@ public class AuthService {
 		this.actorResolver = actorResolver;
 		this.rateLimiter = rateLimiter;
 		this.accountStatusGate = accountStatusGate;
+		this.authorizationService = authorizationService;
 		this.clientId = clientId;
 		this.clientSecret = clientSecret;
 		this.restClient = RestClient.builder().baseUrl("http://127.0.0.1:" + serverPort + contextPath).build();
@@ -132,6 +138,18 @@ public class AuthService {
 
 	public Map<String, Object> refresh(String refreshToken) {
 		String token = required(refreshToken, "refreshToken");
+		// /auth/refresh 在免认证白名单里，请求到达时没有 SecurityContext，账号状态拦截器不会生效。
+		// 这里按刷新令牌反查授权主体，停用/删除账号直接吊销整条授权，避免用刷新令牌续命。
+		OAuth2Authorization authorization = authorizationService.findByToken(token, OAuth2TokenType.REFRESH_TOKEN);
+		if (authorization == null) {
+			throw new MoldApiException(401, "UNAUTHENTICATED", "刷新令牌无效或已过期");
+		}
+		AccountStatusGate.State state = accountStatusGate.byUsername(authorization.getPrincipalName());
+		if (state != AccountStatusGate.State.ACTIVE) {
+			authorizationService.remove(authorization);
+			throw new MoldApiException(401, "UNAUTHENTICATED",
+					state == AccountStatusGate.State.DELETED ? "账号已删除" : "账号已停用或不存在");
+		}
 		RawResponse response = requestToken(form -> {
 			form.add("grant_type", "refresh_token");
 			form.add("refresh_token", token);

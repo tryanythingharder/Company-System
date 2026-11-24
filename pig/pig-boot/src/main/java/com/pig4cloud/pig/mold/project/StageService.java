@@ -125,7 +125,7 @@ public class StageService {
 		Map<String, Object> project = requireProject((String) stage.get("project_id"), true);
 		requireEditableProject(project);
 
-		boolean manager = actor.userId().equals(project.get("owner_user_id"));
+		boolean manager = isManager(actor, project);
 		if (!manager) {
 			requireAssigned(actor, stage);
 			Set<String> employeeFields = Set.of("note", "plannedStart", "plannedEnd");
@@ -188,7 +188,7 @@ public class StageService {
 		MoldActor actor = actorResolver.current();
 		Map<String, Object> stage = loadStage(stageId, true);
 		Map<String, Object> project = requireProject((String) stage.get("project_id"), true);
-		if (!actor.userId().equals(project.get("owner_user_id"))) {
+		if (!isManager(actor, project)) {
 			requireAssigned(actor, stage);
 		}
 		requireEditableProject(project);
@@ -222,6 +222,69 @@ public class StageService {
 		eventWriter.emit("stage.transitioned", "STAGE", stageId, (String) stage.get("project_id"), stageId,
 				actor.userId(), number(after.get("version")), "BASIC", transition.toStatus(),
 				transition.fromStatus(), List.of("status"));
+		return after;
+	}
+
+	/**
+	 * 作废阶段（2026-11 拍板）：仅未开工阶段；仅项目负责人或老板；必须填写原因。
+	 * 作废即软删（deleted_at）：阶段列表与完工检查自动跳过，阶段事件与审计保留；同名阶段可重新创建。
+	 * 阶段上仍有未解决异常时不可作废。
+	 */
+	@Transactional(rollbackFor = Exception.class)
+	public Map<String, Object> voidStage(String stageId, Integer expectedVersion, Map<String, Object> body) {
+		MoldActor actor = actorResolver.current();
+		Map<String, Object> stage = loadStage(stageId, true);
+		String projectId = (String) stage.get("project_id");
+		Map<String, Object> project = requireProject(projectId, true);
+		requireOwner(actor, project);
+		requireEditableProject(project);
+
+		String status = (String) stage.get("status");
+		if (!StageStateMachine.NOT_STARTED.equals(status)) {
+			Map<String, Object> details = new LinkedHashMap<>();
+			details.put("conflictKind", "STAGE_STATE");
+			details.put("resourceType", "STAGE");
+			details.put("resourceId", stageId);
+			details.put("currentStatus", status);
+			details.put("allowedVoidStatuses", List.of(StageStateMachine.NOT_STARTED));
+			throw new MoldApiException(409, "INVALID_STATE_TRANSITION", "仅未开工阶段可作废", details);
+		}
+		checkVersion(expectedVersion, number(stage.get("version")));
+		Map<String, Object> safeBody = body == null ? Map.of() : body;
+		rejectUnknownFields(safeBody, Set.of("reason"));
+		String reason = nullableText(safeBody.get("reason"), "reason", 2000);
+		if (!StringUtils.hasText(reason)) {
+			throw MoldApiException.validation("/body/reason", "required", null, "作废阶段必须填写原因");
+		}
+		Long openIssues = jdbcTemplate.queryForObject(
+				"SELECT COUNT(*) FROM issues WHERE stage_id = ? AND status = 'OPEN' AND deleted_at IS NULL",
+				Long.class, stageId);
+		if (openIssues != null && openIssues > 0) {
+			Map<String, Object> details = new LinkedHashMap<>();
+			details.put("conflictKind", "STAGE_STATE");
+			details.put("resourceType", "STAGE");
+			details.put("resourceId", stageId);
+			details.put("openIssueCount", openIssues);
+			throw new MoldApiException(409, "STAGE_HAS_OPEN_ISSUES", "该阶段仍有未解决异常，请先处理后再作废", details);
+		}
+
+		Map<String, Object> before = dto(stage);
+		int nextVersion = number(stage.get("version")) + 1;
+		jdbcTemplate.update("""
+				UPDATE project_stages
+				   SET deleted_at = UTC_TIMESTAMP(3), version = version + 1,
+				       updated_at = UTC_TIMESTAMP(3), updated_by = ?
+				 WHERE id = ?
+				""", actor.userId(), stageId);
+		touchProject(projectId);
+		appendEvent(stageId, "VOID", status, "VOIDED", reason, null, actor.userId());
+		Map<String, Object> after = new LinkedHashMap<>(before);
+		after.put("status", "VOIDED");
+		after.put("version", nextVersion);
+		after.put("voidReason", reason);
+		auditWriter.record("STAGE", stageId, "VOID", before, after);
+		eventWriter.emit("stage.voided", "STAGE", stageId, projectId, stageId, actor.userId(), nextVersion, "BASIC",
+				"VOIDED", status, List.of("status"));
 		return after;
 	}
 
@@ -305,9 +368,14 @@ public class StageService {
 		}
 	}
 
+	/** 项目负责人本人，或老板（OWNER，2026-11 拍板：可直接操作任意项目）。 */
+	private static boolean isManager(MoldActor actor, Map<String, Object> project) {
+		return actor.roles().contains("OWNER") || actor.userId().equals(project.get("owner_user_id"));
+	}
+
 	private void requireOwner(MoldActor actor, Map<String, Object> project) {
-		if (!actor.userId().equals(project.get("owner_user_id"))) {
-			throw new MoldApiException(403, "NOT_PROJECT_OWNER", "仅该项目负责人可维护该项目");
+		if (!isManager(actor, project)) {
+			throw new MoldApiException(403, "NOT_PROJECT_OWNER", "仅该项目负责人或老板可维护该项目");
 		}
 	}
 

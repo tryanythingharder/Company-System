@@ -1,5 +1,5 @@
 import { Cookie, Local, Session, STORAGE_KEYS } from '/@/utils/storage';
-import { getUserInfo, login, loginByMobile, loginBySocial, refreshTokenApi, SocialLoginEnum } from '/@/api/login/index';
+import { getUserInfo, login, loginByMobile, loginBySocial, refreshTokenApi, rememberTokenExpiry, SocialLoginEnum } from '/@/api/login/index';
 import { useMessage } from '/@/hooks/message';
 
 /**
@@ -42,6 +42,7 @@ export const useUserInfo = defineStore('userInfo', {
 						Session.set('token', accessToken);
 						const refreshToken = payload?.token?.refreshToken || payload?.refreshToken || payload?.refresh_token;
 						if (refreshToken) Session.set('refresh_token', refreshToken);
+						rememberTokenExpiry(payload?.token?.expiresIn);
 						resolve(payload);
 					})
 					.catch((err) => {
@@ -102,7 +103,7 @@ export const useUserInfo = defineStore('userInfo', {
 		},
 
 		/**
-		 * 刷新token方法
+		 * 刷新token方法（走 /admin/auth/refresh，出参为 R 信封：data.accessToken / data.token.refreshToken）
 		 * @function refreshToken
 		 * @async
 		 * @returns {Promise<any>}
@@ -110,15 +111,25 @@ export const useUserInfo = defineStore('userInfo', {
 		async refreshToken() {
 			return new Promise((resolve, reject) => {
 				const refreshToken = Session.get('refresh_token');
+				if (!refreshToken) {
+					reject({ msg: '缺少刷新令牌' });
+					return;
+				}
 				refreshTokenApi(refreshToken)
-					.then((res) => {
-						// 存储token 信息
-						Session.set(STORAGE_KEYS.TOKEN, res.access_token);
-						Session.set(STORAGE_KEYS.REFRESH_TOKEN, res.refresh_token);
-						resolve(res);
+					.then((res: any) => {
+						const payload = res?.data ?? res;
+						const accessToken = payload?.accessToken || payload?.token?.accessToken;
+						if (!accessToken) {
+							reject({ msg: '刷新响应缺少令牌' });
+							return;
+						}
+						Session.set(STORAGE_KEYS.TOKEN, accessToken);
+						const nextRefresh = payload?.token?.refreshToken;
+						if (nextRefresh) Session.set(STORAGE_KEYS.REFRESH_TOKEN, nextRefresh);
+						rememberTokenExpiry(payload?.token?.expiresIn);
+						resolve(payload);
 					})
 					.catch((err) => {
-						useMessage().error(err.msg);
 						reject(err);
 					});
 			});

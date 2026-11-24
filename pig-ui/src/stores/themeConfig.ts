@@ -135,9 +135,9 @@ export const useThemeConfig = defineStore('themeConfig', {
 			// 默认全局组件大小，可选值"<large|'default'|small>"，默认 'default'
 			globalComponentSize: 'default',
 			// 网站主标题（菜单导航、浏览器当前网页标题、登录form顶部右侧）
-			globalTitle: 'PIG ADMIN',
+			globalTitle: '模具加工管理系统',
 			// footer 标题内容
-			footerAuthor: 'pig4cloud.com',
+			footerAuthor: '',
 		},
 	}),
 	actions: {

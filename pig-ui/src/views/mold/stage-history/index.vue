@@ -78,7 +78,7 @@
 									v-if="eventState === 'forbidden'"
 									kind="forbidden"
 									title="无阶段历史查看权限"
-									description="当前账号没有 mold:project:list 权限。"
+									description="当前账号没有查看项目进度的权限。如需使用，请联系老板开通。"
 									action-text="返回首页"
 									@action="goHome"
 								/>

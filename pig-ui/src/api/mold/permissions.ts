@@ -46,8 +46,7 @@ export function useMoldPermissions() {
 	const isAdmin = computed(
 		() =>
 			legacyCaps.value.includes('*:*:*') ||
-			roleCodes.value.includes('OWNER') ||
-			(userStore.userInfos as any)?.user?.username === 'admin'
+			roleCodes.value.includes('OWNER')
 	);
 	const isOwnerRole = computed(() => roleCodes.value.includes('OWNER'));
 
@@ -78,9 +77,15 @@ export function useMoldPermissions() {
 		return project.ownerUserId === state.value.meId;
 	}
 
-	/** 写项目/阶段 = 能力串 + 该项目负责人（服务端最后仍会鉴权） */
+	/** 项目负责人本人，或老板（OWNER 可直接操作任意项目，2026-11 拍板） */
+	function isManager(project: { ownerUserId?: string } | null | undefined): boolean {
+		if (!project || !state.value.meId) return false;
+		return isOwnerRole.value || isOwner(project);
+	}
+
+	/** 写项目/阶段 = 能力串 + 该项目负责人或老板（服务端最后仍会鉴权） */
 	function canWrite(project: { ownerUserId?: string } | null | undefined, capability: string): boolean {
-		return can(capability) && isOwner(project);
+		return can(capability) && isManager(project);
 	}
 
 	/** 变更负责人：后端仅 OWNER，且对任意项目生效（不受 ownerUserId 限制） */
@@ -143,6 +148,7 @@ export function useMoldPermissions() {
 		canWrite,
 		canTransferOwner,
 		isOwner,
+		isManager,
 		ensureLoaded,
 		reset,
 		source,

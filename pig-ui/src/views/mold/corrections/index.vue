@@ -19,7 +19,7 @@
 						v-if="forbidden"
 						kind="forbidden"
 						title="无更正权限"
-						description="当前账号没有 mold:correction:preview / mold:correction:apply 权限。服务端仍会对每个请求重新鉴权。"
+						description="当前账号没有更正流水的权限。更正由财务或老板操作。"
 						action-text="返回财务收支"
 						@action="goCash"
 					/>

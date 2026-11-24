@@ -1,6 +1,6 @@
 /*
  * 模具加工管理系统 M7-A7
- * X-Forwarded-For 只在可信反代来源时采信。
+ * X-Forwarded-For 只在可信反代来源时采信；取最右侧第一个不可信地址（防伪造）。
  */
 package com.pig4cloud.pig.mold.auth;
 
@@ -19,7 +19,13 @@ class ClientIpResolverTest {
 
 	@Test
 	void trustsForwardedForFromLoopbackProxy() {
-		assertThat(resolver.resolve("127.0.0.1", "203.0.113.9, 10.0.0.1")).isEqualTo("203.0.113.9");
+		assertThat(resolver.resolve("127.0.0.1", "203.0.113.9")).isEqualTo("203.0.113.9");
+	}
+
+	@Test
+	void takesRightmostUntrustedHopSoClientCannotSpoof() {
+		// 客户端自带伪造头 "1.1.1.1"，nginx 在右侧追加真实对端 203.0.113.9
+		assertThat(resolver.resolve("127.0.0.1", "1.1.1.1, 203.0.113.9")).isEqualTo("203.0.113.9");
 	}
 
 	@Test
@@ -36,6 +42,24 @@ class ClientIpResolverTest {
 	@Test
 	void skipsBlankForwardedEntries() {
 		assertThat(resolver.resolve("127.0.0.1", " , 203.0.113.9")).isEqualTo("203.0.113.9");
+	}
+
+	@Test
+	void supportsCidrTrustedProxiesAndSkipsTrustedHops() {
+		ClientIpResolver cidr = new ClientIpResolver("172.30.57.0/24,127.0.0.1");
+		assertThat(cidr.resolve("172.30.57.9", "203.0.113.9")).isEqualTo("203.0.113.9");
+		// 链上多级可信代理都跳过
+		assertThat(cidr.resolve("172.30.57.9", "1.1.1.1, 203.0.113.9, 172.30.57.4")).isEqualTo("203.0.113.9");
+		// 网段外来源不采信
+		assertThat(cidr.resolve("172.30.58.9", "203.0.113.9")).isEqualTo("172.30.58.9");
+	}
+
+	@Test
+	void nonIpHopsAreNeverTrustedAndNeverResolved() {
+		ClientIpResolver cidr = new ClientIpResolver("10.0.0.0/8");
+		assertThat(cidr.isTrusted("example.com")).isFalse();
+		assertThat(cidr.isTrusted("10.1.2.3")).isTrue();
+		assertThat(cidr.isTrusted("10.1.2")).isFalse();
 	}
 
 }

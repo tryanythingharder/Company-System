@@ -22,6 +22,9 @@
 					<el-dropdown-menu>
 						<el-dropdown-item v-if="canStage" command="stage">添加阶段</el-dropdown-item>
 						<el-dropdown-item v-if="canOwner" command="owner">变更负责人</el-dropdown-item>
+						<el-dropdown-item v-if="canHold" command="hold">暂停项目</el-dropdown-item>
+						<el-dropdown-item v-if="canResume" command="resume">恢复项目</el-dropdown-item>
+						<el-dropdown-item v-if="canCancel" command="cancel" divided>取消项目</el-dropdown-item>
 						<el-dropdown-item v-if="!hasAnyWrite" disabled>无写操作权限</el-dropdown-item>
 					</el-dropdown-menu>
 				</template>
@@ -40,6 +43,9 @@
 						<el-dropdown-item v-if="canComplete" command="complete">确认完工</el-dropdown-item>
 						<el-dropdown-item v-if="canStage" command="stage">添加阶段</el-dropdown-item>
 						<el-dropdown-item v-if="canOwner" command="owner">变更负责人</el-dropdown-item>
+						<el-dropdown-item v-if="canHold" command="hold">暂停项目</el-dropdown-item>
+						<el-dropdown-item v-if="canResume" command="resume">恢复项目</el-dropdown-item>
+						<el-dropdown-item v-if="canCancel" command="cancel" divided>取消项目</el-dropdown-item>
 						<el-dropdown-item v-if="!hasAnyWrite" disabled>无写操作权限</el-dropdown-item>
 					</el-dropdown-menu>
 				</template>
@@ -310,10 +316,11 @@
 <script setup lang="ts" name="moldProjectActions">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { ArrowDown } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import {
 	addProjectStage,
 	changeProjectOwner,
+	changeProjectStatus,
 	completeProject,
 	fetchUsers,
 	MoldApiError,
@@ -342,7 +349,7 @@ const emit = defineEmits<{
 	(e: 'detail'): void;
 }>();
 
-const { can, canWrite, canTransferOwner, isOwner, identityReady, ensureLoaded } = useMoldPermissions();
+const { can, canWrite, canTransferOwner, isManager, identityReady, ensureLoaded } = useMoldPermissions();
 onMounted(() => ensureLoaded());
 
 const viewportWidth = ref(typeof window === 'undefined' ? 1440 : window.innerWidth);
@@ -353,20 +360,31 @@ const dialogWidth = computed(() => (viewportWidth.value <= 900 ? '92%' : '480px'
 
 /* ------------------------------- 权限（对象级） ------------------------------- */
 const dropdownRef = ref<any>();
-const canEdit = computed(() => canWrite(props.project, 'mold:project:update'));
+const editable = computed(() => props.project.status === 'ACTIVE' || props.project.status === 'ON_HOLD');
+const canEdit = computed(() => editable.value && canWrite(props.project, 'mold:project:update'));
 const canComplete = computed(
 	() =>
 		canWrite(props.project, 'mold:project:complete') &&
 		(props.project.status === 'ACTIVE' || props.project.status === 'ON_HOLD')
 );
-const canStage = computed(() => can('mold:stage:create') && canWrite(props.project, 'mold:project:update'));
+const canStage = computed(
+	() => editable.value && can('mold:stage:create') && canWrite(props.project, 'mold:project:update')
+);
+/** 暂停 / 恢复 / 取消：项目负责人或老板；取消为终态，重开暂不开放 */
+const canStatus = computed(() => canWrite(props.project, 'mold:project:update'));
+const canHold = computed(() => canStatus.value && props.project.status === 'ACTIVE');
+const canResume = computed(() => canStatus.value && props.project.status === 'ON_HOLD');
+const canCancel = computed(() => canStatus.value && editable.value);
 /** 变更负责人：后端仅 OWNER，且对任意项目生效（不要求当前负责人本人） */
 const canOwner = computed(() => canTransferOwner());
-const hasAnyWrite = computed(() => canEdit.value || canComplete.value || canStage.value || canOwner.value);
+const hasAnyWrite = computed(
+	() => canEdit.value || canComplete.value || canStage.value || canOwner.value || canHold.value || canResume.value || canCancel.value
+);
 
 const writeHint = computed(() => {
 	if (!identityReady.value) return '正在核对当前账号权限…';
-	if (!isOwner(props.project)) return '仅项目负责人可操作（服务端会再次校验）';
+	if (!isManager(props.project)) return '仅项目负责人或老板可操作（服务端会再次校验）';
+	if (!editable.value) return '项目已完工或已取消，不能再修改';
 	if (!hasAnyWrite.value) return '当前账号没有写操作权限';
 	return '更多写操作';
 });
@@ -380,6 +398,69 @@ function onCommand(cmd: string) {
 	else if (cmd === 'complete') openComplete();
 	else if (cmd === 'stage') openStage();
 	else if (cmd === 'owner') openOwner();
+	else if (cmd === 'hold' || cmd === 'resume' || cmd === 'cancel') changeStatus(cmd);
+}
+
+/* ------------------------------- 暂停 / 恢复 / 取消 ------------------------------- */
+const STATUS_ACTIONS = {
+	hold: { title: '暂停项目', verb: '暂停', done: '项目已暂停', needReason: true, placeholder: '例如：客户要求暂缓，等待图纸变更' },
+	resume: { title: '恢复项目', verb: '恢复', done: '项目已恢复', needReason: false, placeholder: '恢复说明（可留空）' },
+	cancel: {
+		title: '取消项目',
+		verb: '取消',
+		done: '项目已取消',
+		needReason: true,
+		placeholder: '例如：客户撤单。取消后项目不能再修改，也不能重新打开',
+	},
+} as const;
+
+async function changeStatus(action: 'hold' | 'resume' | 'cancel') {
+	const cfg = STATUS_ACTIONS[action];
+	let reason = '';
+	try {
+		const res: any = await ElMessageBox.prompt(
+			action === 'cancel'
+				? `确定取消项目「${props.project.name}」吗？取消后项目将关闭，不能再编辑、推进阶段或重新打开。`
+				: `${cfg.verb}项目「${props.project.name}」`,
+			cfg.title,
+			{
+				confirmButtonText: `确认${cfg.verb}`,
+				cancelButtonText: '返回',
+				inputType: 'textarea',
+				inputPlaceholder: cfg.placeholder,
+				inputValidator: (v: string) => {
+					if (cfg.needReason && !v?.trim()) return `请填写${cfg.verb}原因`;
+					if ((v || '').trim().length > 500) return '原因不能超过 500 字';
+					return true;
+				},
+				type: action === 'cancel' ? 'warning' : 'info',
+				closeOnClickModal: false,
+			}
+		);
+		reason = (res?.value || '').trim();
+	} catch {
+		return; // 用户点了返回
+	}
+	const scope = `project.${action}:${props.project.id}:${props.project.version}:${stableHash(reason)}`;
+	try {
+		const updated = await changeProjectStatus(
+			props.project.id,
+			action,
+			reason || null,
+			props.project.version,
+			beginIdempotentAction(scope)
+		);
+		finishIdempotentAction(scope);
+		ElMessage.success(cfg.done);
+		emit('saved', updated);
+	} catch (err: any) {
+		if (err instanceof MoldApiError && err.status === 409 && err.code === 'VERSION_CONFLICT') {
+			ElMessage.error('项目已被他人修改，已为你刷新，请确认后重试');
+			emit('reload');
+			return;
+		}
+		ElMessage.error(describeMoldError(err, `${cfg.verb}项目失败`).message || `${cfg.verb}项目失败`);
+	}
 }
 
 /* ------------------------------- 通用状态 ------------------------------- */

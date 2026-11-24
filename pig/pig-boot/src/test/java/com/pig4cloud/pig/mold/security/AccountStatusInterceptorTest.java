@@ -6,7 +6,7 @@
  *   2) 删除账号同样被拒，文案可区分；
  *   3) 正常账号放行；
  *   4) 未登录不在这里改写（交给 401 入口点）；
- *   5) 状态查询异常时放行（fail-open，避免一次数据库抖动放大成全员掉线）。
+ *   5) 状态查询异常时拒绝（fail-closed，503），权限闸门失效不能放行。
  */
 package com.pig4cloud.pig.mold.security;
 
@@ -93,7 +93,7 @@ class AccountStatusInterceptorTest {
 	}
 
 	@Test
-	void failsOpenWhenStatusLookupBreaks() throws Exception {
+	void failsClosedWhenStatusLookupBreaks() throws Exception {
 		authenticate();
 		AccountStatusGate broken = new AccountStatusGate(new JdbcTemplate()) {
 			@Override
@@ -106,8 +106,10 @@ class AccountStatusInterceptorTest {
 		MockHttpServletResponse response = new MockHttpServletResponse();
 		boolean allowed = interceptor.preHandle(new MockHttpServletRequest(), response, new Object());
 
-		assertTrue(allowed, "数据库异常时不应放大成全员掉线");
-		assertEquals(200, response.getStatus());
+		assertFalse(allowed, "权限闸门失效时不能放行（fail-closed）");
+		assertEquals(503, response.getStatus());
+		JsonNode body = objectMapper.readTree(response.getContentAsString(StandardCharsets.UTF_8));
+		assertEquals("SERVICE_UNAVAILABLE", body.path("data").path("errorCode").asText());
 	}
 
 	private AccountStatusInterceptor interceptor(AccountStatusGate.State state) {

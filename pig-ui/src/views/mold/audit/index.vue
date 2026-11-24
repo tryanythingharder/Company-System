@@ -61,7 +61,7 @@
 						v-if="state === 'forbidden'"
 						kind="forbidden"
 						title="无审计日志查看权限"
-						description="当前账号没有 mold:audit:list 权限（仅 OWNER）。服务端仍会对每个请求重新鉴权。"
+						description="审计日志只有老板可以查看。"
 						action-text="返回首页"
 						@action="goHome"
 					/>
@@ -217,7 +217,7 @@ import { useMoldList } from '/@/utils/moldList';
 import { formatDateTime } from '/@/utils/moldFormat';
 
 const router = useRouter();
-const { ensureLoaded } = useMoldPermissions();
+const { can, ensureLoaded, unreachable } = useMoldPermissions();
 
 const ENTITY_TYPES = ['PROJECT', 'STAGE', 'ISSUE', 'PURCHASE', 'PURCHASE_RECEIPT', 'PURCHASE_INVOICE', 'CASH_ENTRY', 'COUNTERPARTY', 'ATTACHMENT', 'USER'];
 const ACTIONS = [
@@ -337,8 +337,18 @@ async function loadActors() {
 	}
 }
 
-onMounted(() => {
-	ensureLoaded();
+/**
+ * 没有查看权限时直接显示无权限面板，不再请求接口，避免控制台和网络面板留下 403。
+ * 权限接口因网络故障拿不到时不当作「无权限」，仍照常请求，由服务端裁决。
+ */
+const noViewAccess = computed(() => !unreachable.value && !can('mold:audit:list'));
+
+onMounted(async () => {
+	await ensureLoaded();
+	if (noViewAccess.value) {
+		state.value = 'forbidden';
+		return;
+	}
 	list.load(true);
 	loadActors();
 });

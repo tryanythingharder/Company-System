@@ -4,18 +4,20 @@
 			<div class="mold-pwd-brand">
 				<div class="mold-pwd-logo">模</div>
 				<div>
-					<h1>修改初始密码</h1>
-					<p class="mold-pwd-sub">账号 {{ accountName || '—' }} 需要先设置新密码，之后才能进入系统。</p>
+					<h1>{{ selfService ? '修改密码' : '修改初始密码' }}</h1>
+					<p class="mold-pwd-sub" v-if="selfService">账号 {{ accountName || '—' }}：修改后当前登录保持有效，下次登录使用新密码。</p>
+					<p class="mold-pwd-sub" v-else>账号 {{ accountName || '—' }} 需要先设置新密码，之后才能进入系统。</p>
 				</div>
 			</div>
 
 			<el-alert
+				v-if="!selfService"
 				class="mold-pwd-alert"
 				type="warning"
 				:closable="false"
 				show-icon
-				title="服务端要求先改密"
-				description="未改密前，除 /auth/me、/auth/logout、/auth/password 外的业务接口都会返回 403 PASSWORD_CHANGE_REQUIRED。"
+				title="首次登录需要先修改密码"
+				description="这是管理员设置的初始密码或重置后的临时密码。改完之前，系统里的其他功能都无法使用。"
 			/>
 
 			<el-alert
@@ -68,8 +70,11 @@
 				</ul>
 
 				<div class="mold-pwd-actions">
-					<el-button link type="primary" data-testid="pwd-logout" @click="logout">退出登录</el-button>
-					<el-button type="primary" native-type="submit" :loading="submitting" data-testid="pwd-submit">保存并进入系统</el-button>
+					<el-button v-if="selfService" link type="primary" data-testid="pwd-cancel" @click="cancel">返回</el-button>
+					<el-button v-else link type="primary" data-testid="pwd-logout" @click="logout">退出登录</el-button>
+					<el-button type="primary" native-type="submit" :loading="submitting" data-testid="pwd-submit">{{
+						selfService ? '保存新密码' : '保存并进入系统'
+					}}</el-button>
 				</div>
 			</el-form>
 		</div>
@@ -77,7 +82,7 @@
 </template>
 
 <script setup lang="ts" name="moldChangePassword">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { changeOwnPassword, fetchMe } from '/@/api/mold/auth';
@@ -89,6 +94,13 @@ import { Session } from '/@/utils/storage';
 
 const route = useRoute();
 const router = useRouter();
+
+/**
+ * 自助改密模式（?mode=self）：已登录用户从顶栏「修改密码」进入。
+ * 背景：顶栏原「个人中心」走上游 /admin/user/personal/password，绕过本系统的口令规则与审计，
+ * 且其资料保存接口直接 500，已下线；改密统一走 POST /auth/password。
+ */
+const selfService = computed(() => route.query.mode === 'self');
 
 const formRef = ref<any>();
 const form = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' });
@@ -176,6 +188,11 @@ async function submit() {
 	}
 }
 
+function cancel() {
+	if (window.history.length > 1) router.back();
+	else router.replace('/home');
+}
+
 async function logout() {
 	try {
 		await apiLogout();
@@ -193,7 +210,7 @@ onMounted(async () => {
 	try {
 		const me = await fetchMe();
 		accountName.value = me.user?.displayName || me.user?.loginName || '';
-		if (!me.mustChangePassword) {
+		if (!me.mustChangePassword && !selfService.value) {
 			router.replace(targetPath());
 		}
 	} catch (err) {

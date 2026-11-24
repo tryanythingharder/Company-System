@@ -1,0 +1,163 @@
+# 模具加工管理系统 —— 生产部署（单机 Docker Compose）
+#
+# 首次部署：
+#   ./deploy/gen-secrets.sh                                    # 生成 deploy/.env（随机密钥，权限 600）
+#   docker compose -f deploy/docker-compose.prod.yml build backend
+#   docker compose -f deploy/docker-compose.prod.yml build nginx
+#   docker compose -f deploy/docker-compose.prod.yml up -d
+# 详见 deploy/README.md
+#
+# 对外只暴露 nginx（默认绑定 127.0.0.1:8080；上线时前面接 TLS 终止的负载均衡/网关，或改 MOLD_HTTP_BIND）。
+# MySQL / Redis / 后端只在内部网络可达。
+name: mold
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    command:
+      - --lower_case_table_names=1
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+00:00
+      # 资金类写路径在 RC 下配合锁定读，避免快照读到旧值；也减少间隙锁死锁
+      - --transaction-isolation=READ-COMMITTED
+      - --require-secure-transport=ON
+      - --skip-name-resolve
+      - --binlog-expire-logs-seconds=604800
+      - --innodb-buffer-pool-size=256M
+      - --max-connections=200
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?}
+      MOLD_DB_USER: ${MOLD_DB_USER:?}
+      MOLD_DB_PASSWORD: ${MOLD_DB_PASSWORD:?}
+      MOLD_AUTH_CLIENT_SECRET: ${MOLD_AUTH_CLIENT_SECRET:?}
+      TZ: UTC
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+      - ../pig/db:/mold-db:ro
+    networks: [mold]
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping --protocol=socket -uroot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+    mem_limit: 900m
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # 口令写入只在容器内可见的配置文件，再交给官方 entrypoint（会降权为 redis 用户运行）
+    command:
+      - sh
+      - -c
+      - |
+        umask 022
+        printf 'requirepass %s\n' "$$MOLD_REDIS_PASSWORD" > /tmp/redis.conf
+        exec docker-entrypoint.sh redis-server /tmp/redis.conf --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction --protected-mode yes
+    environment:
+      MOLD_REDIS_PASSWORD: ${MOLD_REDIS_PASSWORD:?}
+      REDISCLI_AUTH: ${MOLD_REDIS_PASSWORD:?}
+    volumes:
+      - redis_data:/data
+    networks: [mold]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    mem_limit: 320m
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+
+  backend:
+    image: mold/backend:${MOLD_VERSION:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+      args:
+        BUILD_VERSION: ${MOLD_VERSION:-dev}
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: m2,prod
+      MOLD_DB_HOST: mysql
+      MOLD_DB_USER: ${MOLD_DB_USER:?}
+      MOLD_DB_PASSWORD: ${MOLD_DB_PASSWORD:?}
+      MOLD_REDIS_HOST: redis
+      MOLD_REDIS_PASSWORD: ${MOLD_REDIS_PASSWORD:?}
+      MOLD_AUTH_CLIENT_SECRET: ${MOLD_AUTH_CLIENT_SECRET:?}
+      MOLD_ENCODE_KEY: ${MOLD_ENCODE_KEY:?}
+      MOLD_JASYPT_PASSWORD: ${MOLD_JASYPT_PASSWORD:?}
+      # 只信任 nginx 容器（固定 IP）转发的 X-Forwarded-For
+      MOLD_TRUSTED_PROXY_IPS: 172.30.57.10
+      # 首个 OWNER 账号（库里没有在职 OWNER 时创建一次，首登强制改密；之后自动跳过）
+      MOLD_BOOTSTRAP_OWNER_LOGIN: ${MOLD_BOOTSTRAP_OWNER_LOGIN:-}
+      MOLD_BOOTSTRAP_OWNER_PASSWORD: ${MOLD_BOOTSTRAP_OWNER_PASSWORD:-}
+      JAVA_OPTS: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -Duser.timezone=UTC -Djava.security.egd=file:/dev/./urandom"
+    volumes:
+      - backend_files:/app/data/files
+      - backend_logs:/app/logs
+    networks: [mold]
+    healthcheck:
+      # 就绪探针：含 DB/Redis；存活另有 /admin/healthz
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:9999/admin/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 150s
+    stop_grace_period: 40s
+    mem_limit: 1100m
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+
+  nginx:
+    image: mold/frontend:${MOLD_VERSION:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${MOLD_HTTP_BIND:-127.0.0.1}:${MOLD_HTTP_PORT:-8080}:8080"
+    networks:
+      mold:
+        ipv4_address: 172.30.57.10
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    mem_limit: 128m
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+
+networks:
+  mold:
+    name: mold_prod_net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.57.0/24
+
+volumes:
+  mysql_data:
+  redis_data:
+  backend_files:
+  backend_logs:

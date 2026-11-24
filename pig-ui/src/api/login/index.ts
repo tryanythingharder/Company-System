@@ -70,9 +70,6 @@ export enum SocialLoginEnum {
  * @param data
  */
 export const login = (data: any) => {
-	// 仅为 refreshTokenApi / checkToken 保留 Basic Auth（它们仍走 Pig 原生 oauth2，本轮不改）；
-	// 登录请求本身不再使用它。
-	getBasicAuth(OAuth2ClientType.PASSWORD);
 	return request({
 		url: '/admin/auth/login',
 		method: 'post',
@@ -138,59 +135,43 @@ export const sendMobileCode = (params: SendMobileCodeParams) => {
 	});
 };
 
-export const refreshTokenApi = (refresh_token: string) => {
-	const grant_type = 'refresh_token';
-	const scope = 'server';
-	// 获取当前选中的 basic 认证信息
-	const basicAuth = Session.get('basicAuth');
-
+export const refreshTokenApi = (refreshToken: string) => {
+	// 生产加固：走后端 /admin/auth/refresh 适配层，OAuth 客户端密钥只留在服务端，
+	// 不再在浏览器里拼 Basic 认证直调 Pig 原生 /oauth2/token（那需要把客户端密钥打进前端产物）。
 	return request({
-		url: '/auth/oauth2/token',
-		headers: {
-			skipToken: true,
-			Authorization: basicAuth,
-			'Content-Type': FORM_CONTENT_TYPE,
-		},
+		url: '/admin/auth/refresh',
+		headers: { skipToken: true, 'Enc-Flag': 'false' },
 		method: 'post',
-		params: { refresh_token, grant_type, scope },
+		data: { refreshToken },
 	});
 };
 
 // Token 刷新锁 - 使用 VueUse 的 refAutoReset 防止并发刷新
 const tokenRefreshLock = refAutoReset(false, 100);
 
+/** 登录/刷新时记录的访问令牌过期时间戳（毫秒） */
+export const TOKEN_EXPIRES_AT_KEY = 'token_expires_at';
+
+/** 按响应里的 expiresIn（秒）记录过期时间 */
+export const rememberTokenExpiry = (expiresIn?: number) => {
+	const seconds = Number(expiresIn) || 0;
+	if (seconds > 0) Session.set(TOKEN_EXPIRES_AT_KEY, Date.now() + seconds * 1000);
+};
+
 /**
- * 校验令牌，若有效期小于半小时自动续期
+ * 若访问令牌有效期小于半小时则自动续期。
+ * 过期时间取自登录/刷新响应的 expiresIn，本地判断即可，不再调用 Pig 原生 /token/check_token
+ * （那条路径同样需要客户端 Basic 认证，且对外已由 nginx 屏蔽）。
  * @returns {Promise<boolean>} 返回是否需要停止定时器
  */
 export const checkToken = async (): Promise<boolean> => {
 	try {
-		const basicAuth = Session.get('basicAuth');
-		const response = await request({
-			url: '/auth/token/check_token',
-			headers: {
-				skipToken: true,
-				Authorization: basicAuth,
-				'Content-Type': FORM_CONTENT_TYPE,
-			},
-			method: 'get',
-			params: { token: Session.getToken() },
-		});
-
-		// 检查响应有效性
-		if (validateNull(response) || response.code === 1) {
-			return true; // 返回 true 表示需要停止定时器
-		}
-
-		// 计算过期时间
-		const expire = Date.parse(response.data.expiresAt);
+		if (!Session.getToken()) return true;
+		const expire = Number(Session.get(TOKEN_EXPIRES_AT_KEY)) || 0;
 		if (!expire) return false;
 
-		const expiredPeriod = expire - new Date().getTime();
 		const HALF_HOUR = 30 * 60 * 1000;
-
-		// 小于半小时自动续约
-		if (expiredPeriod <= HALF_HOUR && !tokenRefreshLock.value) {
+		if (expire - Date.now() <= HALF_HOUR && !tokenRefreshLock.value) {
 			tokenRefreshLock.value = true;
 			try {
 				await useUserInfo().refreshToken();
@@ -200,10 +181,8 @@ export const checkToken = async (): Promise<boolean> => {
 				tokenRefreshLock.value = false;
 			}
 		}
-
 		return false; // 继续运行定时器
 	} catch (error) {
-		// 发生异常，返回 true 停止定时器
 		return true;
 	}
 };

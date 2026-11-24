@@ -163,14 +163,19 @@ interface WidgetListItem {
 
 const { t } = useI18n();
 
-	const defaultGrid = ref({
-		layout: [7, 7, 10],
-		copmsList: [
-			['current-user', 'favorite-menu', 'sys-log-line', 'session-uv-summary'],
-			['news', 'sys-log', 'popular-pages'],
-			['calendar', 'device-distribution', 'browser-distribution'],
-		],
-	});
+/**
+ * 内部系统可用的首页组件。
+ * 上游的系统日志（sys-log、sys-log-line）走 /admin/log，只有上游超管有权限；
+ * 访问量、设备、浏览器、热门页面四个组件依赖 Microsoft Clarity（站点已停用追踪），
+ * 任何业务角色调用都是 403，放在首页只会刷一串报错，因此统一屏蔽。
+ */
+const AVAILABLE_WIDGETS = ['current-user', 'favorite-menu', 'news', 'calendar'];
+const isAvailableWidget = (key: string) => AVAILABLE_WIDGETS.includes(key);
+
+const defaultGrid = ref({
+	layout: [12, 6, 6],
+	copmsList: [['current-user', 'favorite-menu'], ['news'], ['calendar']],
+});
 
 const roleDefaultGrid = ref(JSON.parse(JSON.stringify(defaultGrid.value)));
 const allowedWidgetKeys = ref<Set<string> | null>(null);
@@ -181,7 +186,7 @@ const loadRoleDefaultGrid = async (): Promise<boolean> => {
 		const config = res?.data;
 		if (!config) return true; // API 成功但无数据，视为成功
 
-		const allowedKeys = new Set<string>(config.widgetKeys.split(',').filter(Boolean));
+		const allowedKeys = new Set<string>(config.widgetKeys.split(',').filter((k: string) => k && isAvailableWidget(k)));
 
 		if (config.layoutConfig) {
 			const layout = JSON.parse(config.layoutConfig);
@@ -223,6 +228,7 @@ const allCompsList = computed(() => {
 const myCompsList = computed(() => {
 	return allCompsList.value.filter((item: WidgetListItem) => {
 		if (item.disabled) return false;
+		if (!isAvailableWidget(item.key)) return false;
 		if (allowedWidgetKeys.value !== null) {
 			return allowedWidgetKeys.value.has(item.key);
 		}
@@ -302,16 +308,20 @@ onMounted(async () => {
 		try {
 			const local = JSON.parse(saved);
 			if (Array.isArray(local?.copmsList)) {
+				// 旧版本存下的布局可能带着已屏蔽的组件，先剔除再校验
+				local.copmsList = local.copmsList.map((col: string[]) => (Array.isArray(col) ? col.filter(isAvailableWidget) : []));
 				const localKeys: string[] = local.copmsList.flat();
 				// 完全一致校验：本地 key 集合与后台允许列表数量相同且完全匹配
 				// 后台新增/删除组件时，强制重置为后台配置
 				// API 失败时（roleLoaded=false）拒绝使用本地配置
 				const allowed = allowedWidgetKeys.value;
+				// 后台没给角色配置组件（allowed=null，本系统的常态）时，原逻辑永远拒绝本地布局，
+				// 用户点「完成」保存的自定义刷新后就丢；此时只要求组件都在可用清单内即可
 				const allAllowed =
 					roleLoaded &&
-					allowed !== null &&
-					localKeys.length === allowed.size &&
-					localKeys.every((k) => allowed.has(k));
+					(allowed === null
+						? localKeys.every(isAvailableWidget)
+						: localKeys.length === allowed.size && localKeys.every((k) => allowed.has(k)));
 				if (allAllowed) {
 					grid.value = local;
 					layoutReady.value = true;

@@ -19,7 +19,7 @@
 						v-else-if="state === 'forbidden'"
 						kind="forbidden"
 						title="无项目查看权限"
-						description="当前账号没有 mold:project:list 权限，或该项目不在你的数据范围内。服务端仍会对每个请求重新鉴权。"
+						description="当前账号没有查看项目的权限，或该项目不在你的可见范围内。如需查看，请联系老板开通。"
 						action-text="返回公司进度"
 						@action="goBack"
 					/>
@@ -92,7 +92,21 @@
 								<ul v-else class="mold-stage-list">
 									<li v-for="s in stages" :key="s.id">
 										<span class="mold-stage-name">{{ s.sortOrder }}. {{ s.name }}</span>
-										<el-tag size="small" effect="plain" :type="stageStatusTone(s.status)">{{ stageStatusText(s.status) }}</el-tag>
+										<span class="mold-stage-ops">
+											<el-tag size="small" effect="plain" :type="stageStatusTone(s.status)">{{ stageStatusText(s.status) }}</el-tag>
+											<el-button
+												v-if="canVoidStage(s)"
+												link
+												type="danger"
+												size="small"
+												:loading="voidingStageId === s.id"
+												:data-testid="`stage-void-${s.id}`"
+												title="作废建错或多建的未开工阶段（必须填写原因，历史记录保留）"
+												@click="onVoidStage(s)"
+											>
+												作废
+											</el-button>
+										</span>
 									</li>
 								</ul>
 							</div>
@@ -327,10 +341,10 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowLeft } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import StatePanel from '/@/components/mold/StatePanel.vue';
 import ProjectActions from '/@/components/mold/ProjectActions.vue';
-import { fetchProjectDetail, fetchProjectIssues, fetchProjectMembers, fetchProjectStages, createIssue, resolveIssue, cancelIssue, MoldApiError, type MoldIssueRow, type MoldIssueSeverity, type MoldProjectMember, type MoldProjectRow } from '/@/api/mold/projects';
+import { voidProjectStage, fetchProjectDetail, fetchProjectIssues, fetchProjectMembers, fetchProjectStages, createIssue, resolveIssue, cancelIssue, MoldApiError, type MoldIssueRow, type MoldIssueSeverity, type MoldProjectMember, type MoldProjectRow } from '/@/api/mold/projects';
 import { useMoldPermissions } from '/@/api/mold/permissions';
 import { describeMoldError } from '/@/api/mold/errors';
 import { formatDate, formatDateTime, todayStamp } from '/@/utils/moldFormat';
@@ -338,7 +352,52 @@ import { beginIdempotentAction, finishIdempotentAction, stableHash } from '/@/ut
 
 const route = useRoute();
 const router = useRouter();
-const { can, meId, ensureLoaded } = useMoldPermissions();
+const { can, canWrite, meId, ensureLoaded } = useMoldPermissions();
+
+/* 作废阶段：仅未开工阶段；项目负责人或老板；项目未关闭 */
+const voidingStageId = ref('');
+function canVoidStage(s: any): boolean {
+	const p: any = project.value;
+	if (!p || !(p.status === 'ACTIVE' || p.status === 'ON_HOLD')) return false;
+	return s?.status === 'NOT_STARTED' && can('mold:stage:create') && canWrite(p, 'mold:project:update');
+}
+async function onVoidStage(s: any) {
+	let reason = '';
+	try {
+		const res: any = await ElMessageBox.prompt(
+			`确定作废阶段「${s.name}」吗？作废后该阶段不再显示、不计入完工检查，操作记录会保留。`,
+			'作废阶段',
+			{
+				confirmButtonText: '确认作废',
+				cancelButtonText: '返回',
+				inputType: 'textarea',
+				inputPlaceholder: '作废原因（必填），例如：阶段建重复了',
+				inputValidator: (v: string) => {
+					if (!v?.trim()) return '请填写作废原因';
+					if (v.trim().length > 500) return '原因不能超过 500 字';
+					return true;
+				},
+				type: 'warning',
+				closeOnClickModal: false,
+			}
+		);
+		reason = (res?.value || '').trim();
+	} catch {
+		return;
+	}
+	voidingStageId.value = s.id;
+	const scope = `stage.void:${s.id}:${s.version}:${stableHash(reason)}`;
+	try {
+		await voidProjectStage(s.id, reason, s.version, beginIdempotentAction(scope));
+		finishIdempotentAction(scope);
+		ElMessage.success('阶段已作废');
+	} catch (err: any) {
+		ElMessage.error(describeMoldError(err, '作废阶段失败').message || '作废阶段失败');
+	} finally {
+		voidingStageId.value = '';
+		await Promise.all([loadDetail(), loadStages()]);
+	}
+}
 
 const project = ref<MoldProjectRow | null>(null);
 const stages = ref<any[]>([]);
@@ -350,7 +409,7 @@ const membersState = ref<'loading' | 'ready' | 'error'>('loading');
 const state = ref<'loading' | 'ready' | 'error' | 'forbidden'>('loading');
 const errorInfo = reactive({ title: '加载失败', message: '', requestId: '' });
 
-const openIssues = computed(() => issues.value.filter((it) => it.status === 'OPEN' || it.status === 'HANDLING'));
+const openIssues = computed(() => issues.value.filter((it) => it.status === 'OPEN'));
 
 const stageCounts = computed(() => {
 	const c = project.value?.stageCounts;
@@ -385,12 +444,13 @@ const issueSeverityText = (s: string) => ({ LOW: '低', MEDIUM: '中', HIGH: '�
 const issueSeverityTone = (s: string) =>
 	({ LOW: 'info', MEDIUM: 'warning', HIGH: 'danger' } as Record<string, any>)[s] || 'info';
 const issueStatusText = (s: string) =>
-	({ OPEN: '待处理', HANDLING: '处理中', RESOLVED: '已解决', CANCELLED: '已取消' } as Record<string, string>)[s] || s || '—';
+	({ OPEN: '待处理', RESOLVED: '已解决', CANCELLED: '已取消' } as Record<string, string>)[s] || s || '—';
 
 const completionTitle = computed(() => {
 	const p = project.value;
 	if (!p) return '';
 	if (p.status === 'COMPLETED') return '整单已完工';
+	if (p.status === 'CANCELLED') return '项目已取消';
 	if (stageCounts.value.total > 0 && stageCounts.value.completed === stageCounts.value.total) return '阶段已完成，待负责人确认';
 	return '未完工';
 });
@@ -400,8 +460,10 @@ const completionDesc = computed(() => {
 	if (p.status === 'COMPLETED') {
 		return `负责人已确认完工${p.completedAt ? `（${formatDateTime(p.completedAt)}）` : ''}${p.completionNote ? `：${p.completionNote}` : ''}`;
 	}
-	if (stageCounts.value.total === 0) return '还没有有效阶段；D1 要求至少一个有效阶段才能确认完工。';
-	return `已完成 ${stageCounts.value.completed}/${stageCounts.value.total} 个阶段，未解决异常 ${p.openIssueCount || 0} 个；两项都满足后由负责人确认。`;
+	if (p.status === 'CANCELLED') return '项目已取消并关闭，不能再完工、编辑或推进阶段。取消原因可在审计日志中查看。';
+	const hold = p.status === 'ON_HOLD' ? '项目当前已暂停。' : '';
+	if (stageCounts.value.total === 0) return `${hold}还没有有效阶段，至少需要一个阶段才能确认完工。`;
+	return `${hold}已完成 ${stageCounts.value.completed}/${stageCounts.value.total} 个阶段，未解决异常 ${p.openIssueCount || 0} 个；两项都满足后由负责人或老板确认。`;
 });
 
 async function loadStages() {
@@ -892,6 +954,11 @@ onMounted(() => {
 	font-size: 12px;
 	line-height: 18px;
 	color: var(--el-text-color-secondary);
+}
+.mold-stage-ops {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 }
 .mold-stage-list {
 	list-style: none;

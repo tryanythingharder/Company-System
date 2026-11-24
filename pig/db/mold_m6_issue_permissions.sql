@@ -20,12 +20,12 @@ SELECT 3196, '作废异常', 'mold:issue:cancel', NULL, NULL, 3000, NULL, '0', 1
        UTC_TIMESTAMP(), NULL, NULL, '0'
 WHERE NOT EXISTS (SELECT 1 FROM `sys_menu` WHERE `permission` = 'mold:issue:cancel');
 
--- 2) 绑定：OWNER / PM / PROGRAMMER / MACHINIST / FINANCE / VIEWER（契约「全部 6 个」）
+-- 2) 绑定：OWNER / PM / PROGRAMMER / MACHINIST / FINANCE（VIEWER 为只读，不授异常写权限）
 INSERT INTO `sys_role_menu` (`role_id`, `menu_id`)
 SELECT r.`role_id`, m.`menu_id`
 FROM `sys_role` r
 JOIN `sys_menu` m ON m.`permission` IN ('mold:issue:update', 'mold:issue:cancel')
-WHERE r.`role_code` IN ('OWNER', 'PM', 'PROGRAMMER', 'MACHINIST', 'FINANCE', 'VIEWER')
+WHERE r.`role_code` IN ('OWNER', 'PM', 'PROGRAMMER', 'MACHINIST', 'FINANCE')
   AND NOT EXISTS (SELECT 1 FROM `sys_role_menu` rm
                   WHERE rm.`role_id` = r.`role_id` AND rm.`menu_id` = m.`menu_id`);
 

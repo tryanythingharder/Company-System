@@ -268,10 +268,10 @@ public class IssueService {
 
 	private void requireHandler(MoldActor actor, Map<String, Object> issue, Map<String, Object> project) {
 		if (actor.userId().equals(issue.get("reporter_id")) || actor.userId().equals(issue.get("handler_id"))
-				|| actor.userId().equals(project.get("owner_user_id"))) {
+				|| actor.userId().equals(project.get("owner_user_id")) || actor.roles().contains("OWNER")) {
 			return;
 		}
-		throw new MoldApiException(403, "FORBIDDEN", "仅报告人、处理人或项目负责人可维护该异常");
+		throw new MoldApiException(403, "FORBIDDEN", "仅报告人、处理人、项目负责人或老板可维护该异常");
 	}
 
 	private void requireEditable(Map<String, Object> project) {

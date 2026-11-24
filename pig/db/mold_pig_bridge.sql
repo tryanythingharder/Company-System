@@ -51,12 +51,12 @@ INSERT INTO `sys_menu`
 VALUES
   -- 3.1 八个业务页
   (3000, '公司进度', 'mold:project:list',  '/mold/projects',    'mold/projects/index',    0,    'iconfont icon-xiangmu',   '1', 10, '0', '0', 'm1-seed', '0'),
-  (3001, '我的工作', 'mold:stage:mine',    '/mold/my-work',     'mold/my-work/index',     0,    'iconfont icon-renwu',     '1', 20, '0', '0', 'm1-seed', '0'),
+  (3001, '我的工作', 'mold:stage:mine',    '/mold/my-stages',   'mold/my-stages/index',     0,    'iconfont icon-renwu',     '1', 20, '0', '0', 'm1-seed', '0'),
   (3002, '采购台账', 'mold:purchase:list', '/mold/purchases',   'mold/purchases/index',   0,    'iconfont icon-caigou',    '1', 30, '0', '0', 'm1-seed', '0'),
   (3003, '财务收支', 'mold:cash:list',     '/mold/cash',        'mold/cash/index',        0,    'iconfont icon-zhangdan',  '1', 40, '0', '0', 'm1-seed', '0'),
   (3004, '更正记录', 'mold:correction:list','/mold/corrections','mold/corrections/index', 0,    'iconfont icon-gengzheng', '1', 50, '0', '0', 'm1-seed', '0'),
-  (3005, '阶段历史', 'mold:stage:timeline','/mold/timeline',    'mold/timeline/index',    0,    'iconfont icon-shijian',   '1', 60, '0', '0', 'm1-seed', '0'),
-  (3006, '账号管理', 'mold:user:list',     '/mold/users',       'mold/users/index',       0,    'iconfont icon-zhanghao',  '1', 70, '0', '0', 'm1-seed', '0'),
+  (3005, '阶段历史', 'mold:stage:timeline','/mold/stages',      'mold/stage-history/index',    0,    'iconfont icon-shijian',   '1', 60, '0', '0', 'm1-seed', '0'),
+  (3006, '账号管理', 'mold:user:list',     '/mold/accounts',    'mold/accounts/index',       0,    'iconfont icon-zhanghao',  '1', 70, '0', '0', 'm1-seed', '0'),
   (3007, '审计日志', 'mold:audit:list',    '/mold/audit',       'mold/audit/index',       0,    'iconfont icon-rizhi',     '1', 80, '0', '0', 'm1-seed', '0'),
   -- 3.2 隐藏父节点：承载跨页面的通用权限（附件、通讯录）
   (3099, '通用权限', NULL, NULL, NULL, 0, NULL, '0', 99, '0', '0', 'm1-seed', '0'),
@@ -149,7 +149,7 @@ SELECT 11, `menu_id` FROM `sys_menu`
 WHERE `menu_id` IN (3000,3001,3005,3099)
    OR `permission` IN (
         'mold:project:create','mold:project:update','mold:project:complete',
-        'mold:project:reopen','mold:project:owner','mold:project:member',
+        'mold:project:reopen','mold:project:member',
         'mold:project:export','mold:issue:create','mold:issue:handle',
         'mold:stage:create','mold:stage:update','mold:stage:transition',
         'mold:stage:assign','mold:stage:export',
@@ -198,7 +198,7 @@ INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`)
 SELECT 15, `menu_id` FROM `sys_menu`
 WHERE `menu_id` IN (3000,3005,3099)
    OR `permission` IN (
-        'mold:issue:create','mold:attachment:download','mold:directory:list');
+        'mold:attachment:download','mold:directory:list');
 
 -- -----------------------------------------------------------------------------
 -- 5. 自检

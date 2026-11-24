@@ -146,6 +146,7 @@ const { t } = useI18n();
 // 动态加载滑块验证码组件
 const Verify = defineAsyncComponent(() => import('/@/components/Verifition/Verify.vue'));
 import { useSiteConfig, CaptchaType } from '/@/stores/siteConfig';
+import { sanitizeHtml } from '/@/utils/sanitizeHtml';
 const { siteConfig } = storeToRefs(useSiteConfig());
 
 // 仅翻译默认协议文本，保留站点配置的链接、样式及自定义内容。
@@ -164,7 +165,8 @@ const privacyTip = computed(() => {
 		}
 		node = walker.nextNode();
 	}
-	return template.innerHTML;
+	// 站点配置可被后台编辑：渲染前白名单净化（template 中转本身不过滤 onerror 等属性）
+	return sanitizeHtml(template.innerHTML);
 });
 
 const captchaType = computed(() => siteConfig.value.captchaType || CaptchaType.ClickWord);

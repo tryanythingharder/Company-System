@@ -97,7 +97,7 @@ export default {
 			dropdownDefault: '默认',
 			dropdownSmall: '小型',
 			dropdown1: '首页',
-			dropdown2: '个人中心',
+			dropdown2: '修改密码',
 			dropdown4: '切换部门',
 			dropdown5: '退出登录',
 		searchPlaceholder: '菜单搜索：支持中文、路由路径',

@@ -72,6 +72,20 @@ public class StageController {
 		return R.ok(outcome.data());
 	}
 
+	@PostMapping("/stages/{stageId}/void")
+	@PreAuthorize("@pms.hasPermission('mold:stage:create')")
+	public R<Map<String, Object>> voidStage(@PathVariable String stageId,
+			@RequestHeader(value = "If-Match", required = false) String ifMatch,
+			@RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+			@RequestBody(required = false) Map<String, Object> body, HttpServletResponse response) {
+		Map<String, Object> safeBody = body == null ? new java.util.LinkedHashMap<>() : body;
+		IdempotencyService.Outcome outcome = idempotencyService.executeRequired("stage.void", idempotencyKey,
+				"POST /mold/stages/" + stageId + "/void|" + ifMatch, safeBody, 200,
+				() -> stageService.voidStage(stageId, MoldIfMatch.parse(ifMatch), safeBody));
+		markReplayed(response, outcome);
+		return R.ok(outcome.data());
+	}
+
 	@GetMapping("/stages/{stageId}/events")
 	@PreAuthorize("@pms.hasPermission('mold:project:list')")
 	public R<Map<String, Object>> events(@PathVariable String stageId,

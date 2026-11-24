@@ -71,14 +71,22 @@ public class MoldWebConfig implements WebMvcConfigurer {
 	 * 只放行 /auth/login（无身份）与 /auth/logout（只吊销 token）；
 	 * /auth/refresh 不放行，避免停用账号用刷新令牌续命。
 	 */
+	/*
+	 * 生产加固：两个闸门覆盖全部 MVC 路径，而不只是 /mold/** 与 /auth/**。
+	 * pig-boot 同进程内置了 upms 等上游接口（/user/**、/menu/**、/sys-file/** ...），
+	 * 只拦业务前缀会让停用账号、待改密账号绕道这些接口。
+	 * /token/** 是本服务内部吊销 token 的通道（AuthService.logout），对外由 nginx 屏蔽。
+	 */
+	private static final String[] ALWAYS_OPEN = { "/auth/login", "/auth/logout", "/healthz", "/error",
+			"/token/**" };
+
 	@Override
 	public void addInterceptors(InterceptorRegistry registry) {
-		registry.addInterceptor(accountStatusInterceptor)
-			.addPathPatterns("/mold/**", "/auth/**")
-			.excludePathPatterns("/auth/login", "/auth/logout");
+		registry.addInterceptor(accountStatusInterceptor).addPathPatterns("/**").excludePathPatterns(ALWAYS_OPEN);
 		registry.addInterceptor(mustChangePasswordInterceptor)
-			.addPathPatterns("/mold/**", "/auth/**")
-			.excludePathPatterns("/auth/login", "/auth/refresh", "/auth/me", "/auth/logout", "/auth/password");
+			.addPathPatterns("/**")
+			.excludePathPatterns(ALWAYS_OPEN)
+			.excludePathPatterns("/auth/refresh", "/auth/me", "/auth/password");
 	}
 
 }

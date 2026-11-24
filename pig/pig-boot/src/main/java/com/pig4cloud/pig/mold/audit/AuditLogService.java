@@ -57,13 +57,14 @@ public class AuditLogService {
 			conditions.add("action = ?");
 			args.add(action.trim());
 		}
+		// 前端传北京日期，created_at 存 UTC：北京自然日换算成 UTC 区间 [d 00:00+08, d+1 00:00+08)
 		if (StringUtils.hasText(dateFrom)) {
 			conditions.add("created_at >= ?");
-			args.add(java.sql.Date.valueOf(parseDate(dateFrom, "dateFrom")));
+			args.add(beijingDayStartUtc(parseDate(dateFrom, "dateFrom")));
 		}
 		if (StringUtils.hasText(dateTo)) {
-			conditions.add("created_at < DATE_ADD(?, INTERVAL 1 DAY)");
-			args.add(java.sql.Date.valueOf(parseDate(dateTo, "dateTo")));
+			conditions.add("created_at < ?");
+			args.add(beijingDayStartUtc(parseDate(dateTo, "dateTo").plusDays(1)));
 		}
 		String where = " WHERE " + String.join(" AND ", conditions);
 
@@ -115,6 +116,19 @@ public class AuditLogService {
 	private String dataVersion() {
 		Long version = jdbcTemplate.queryForObject("SELECT version FROM event_clock WHERE singleton = 1", Long.class);
 		return String.valueOf(version == null ? 0L : version);
+	}
+
+	private static final java.time.ZoneId BEIJING = java.time.ZoneId.of("Asia/Shanghai");
+
+	private static final java.time.format.DateTimeFormatter SQL_DATETIME = java.time.format.DateTimeFormatter
+		.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+	/** 北京时间某日 0 点对应的 UTC 时刻，以字符串传给 MySQL，避免 JDBC 驱动再做一次时区换算 */
+	static String beijingDayStartUtc(LocalDate day) {
+		return day.atStartOfDay(BEIJING)
+			.withZoneSameInstant(java.time.ZoneOffset.UTC)
+			.toLocalDateTime()
+			.format(SQL_DATETIME);
 	}
 
 	private static LocalDate parseDate(String raw, String field) {

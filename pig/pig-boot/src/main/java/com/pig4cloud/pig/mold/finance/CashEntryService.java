@@ -82,9 +82,8 @@ public class CashEntryService {
 
 	/** 红冲类别映射（data-model-v0.2 §4.16.1）；退款类不在表内，不可再红冲。 */
 	public static final Map<String, String> REVERSE_CATEGORY = Map.of("PURCHASE_PAYMENT", "PURCHASE_REFUND",
-			"PURCHASE_REFUND", "PURCHASE_PAYMENT", "CUSTOMER_RECEIPT", "CUSTOMER_REFUND", "CUSTOMER_REFUND",
-			"CUSTOMER_RECEIPT", "DAILY_EXPENSE", "EXPENSE_REFUND", "OTHER_EXPENSE", "EXPENSE_REFUND", "OTHER_INCOME",
-			"INCOME_REFUND");
+			"CUSTOMER_RECEIPT", "CUSTOMER_REFUND", "DAILY_EXPENSE", "EXPENSE_REFUND", "OTHER_EXPENSE", "EXPENSE_REFUND",
+			"OTHER_INCOME", "INCOME_REFUND");
 
 	private static final Map<String, String> SORT_COLUMNS = Map.of("code", "c.code", "occurredOn", "c.occurred_on",
 			"amount", "c.amount", "status", "c.status", "direction", "c.direction", "category", "c.category",
@@ -292,6 +291,7 @@ public class CashEntryService {
 		MoldActor actor = actorResolver.current();
 		MoldFields.rejectUnknownFields(body, Set.of("reason"));
 		String reason = MoldFields.text(body.get("reason"), "reason", 2000);
+		lockPurchaseOf(entryId);
 		Map<String, Object> beforeRow = loadEntry(entryId, true);
 		if (beforeRow == null) {
 			throw new MoldApiException(404, "NOT_FOUND", "流水不存在");
@@ -310,6 +310,9 @@ public class CashEntryService {
 		if (beforeRow.get("reverses_entry_id") != null) {
 			throw new MoldApiException(409, "POLICY_NOT_CONFIRMED", "红冲流水不可单独作废，请走更正流程");
 		}
+		BigDecimal voidAmount = (BigDecimal) beforeRow.get("amount");
+		requirePurchaseNetPaidWithin(beforeRow,
+				"OUT".equals(beforeRow.get("direction")) ? voidAmount.negate() : voidAmount);
 
 		Map<String, Object> before = dto(beforeRow);
 		jdbcTemplate.update("""
@@ -332,6 +335,7 @@ public class CashEntryService {
 		MoldActor actor = actorResolver.current();
 		MoldFields.rejectUnknownFields(body, Set.of("reason", "occurredOn"));
 		String reason = MoldFields.text(body.get("reason"), "reason", 2000);
+		lockPurchaseOf(entryId);
 		Map<String, Object> beforeRow = loadEntry(entryId, true);
 		if (beforeRow == null) {
 			throw new MoldApiException(404, "NOT_FOUND", "流水不存在");
@@ -347,12 +351,18 @@ public class CashEntryService {
 		if (beforeRow.get("replaces_entry_id") != null || beforeRow.get("replaced_by_entry_id") != null) {
 			throw new MoldApiException(409, "ALREADY_CORRECTED", "已进入更正链的流水不可红冲");
 		}
+		if (beforeRow.get("reverses_entry_id") != null) {
+			throw new MoldApiException(409, "POLICY_NOT_CONFIRMED", "红冲流水不可再红冲，请走更正流程");
+		}
 		String category = (String) beforeRow.get("category");
 		String reverseCategory = REVERSE_CATEGORY.get(category);
 		if (reverseCategory == null) {
 			throw new MoldApiException(409, "POLICY_NOT_CONFIRMED", "退款类流水不可再红冲，请走更正/调整流程");
 		}
 		String reverseDirection = CATEGORY_DIRECTION.get(reverseCategory);
+		BigDecimal reverseAmount = (BigDecimal) beforeRow.get("amount");
+		requirePurchaseNetPaidWithin(beforeRow,
+				"IN".equals(reverseDirection) ? reverseAmount.negate() : reverseAmount);
 		LocalDate occurredOn = body.containsKey("occurredOn")
 				? MoldFields.date(body.get("occurredOn"), "occurredOn")
 				: ((java.sql.Date) beforeRow.get("occurred_on")).toLocalDate();
@@ -474,6 +484,44 @@ public class CashEntryService {
 		List<Map<String, Object>> rows = jdbcTemplate
 			.queryForList("SELECT * FROM cash_entries WHERE id = ?" + (forUpdate ? " FOR UPDATE" : ""), entryId);
 		return rows.isEmpty() ? null : rows.get(0);
+	}
+
+	/**
+	 * 关联采购单的流水在作废/红冲前先锁采购单，加锁顺序与采购付款一致（先采购单、后流水），避免死锁。
+	 */
+	private void lockPurchaseOf(String entryId) {
+		List<Map<String, Object>> peek = jdbcTemplate
+			.queryForList("SELECT purchase_id FROM cash_entries WHERE id = ?", entryId);
+		if (!peek.isEmpty() && peek.get(0).get("purchase_id") != null) {
+			jdbcTemplate.queryForList("SELECT id FROM purchases WHERE id = ? FOR UPDATE", peek.get(0).get("purchase_id"));
+		}
+	}
+
+	/**
+	 * 采购净付 = 付款 - 退款；变动 delta 后必须落在 [0, 采购金额] 内，否则 422 OVER_PAYMENT。
+	 * 调用方已通过 lockPurchaseOf 持有采购单行锁。
+	 */
+	private void requirePurchaseNetPaidWithin(Map<String, Object> row, BigDecimal delta) {
+		Object purchaseId = row.get("purchase_id");
+		if (purchaseId == null) {
+			return;
+		}
+		BigDecimal total = jdbcTemplate.queryForObject("SELECT amount_total FROM purchases WHERE id = ?",
+				BigDecimal.class, purchaseId);
+		BigDecimal paid = jdbcTemplate.queryForObject("""
+				SELECT COALESCE(SUM(CASE WHEN direction = 'OUT' THEN amount ELSE -amount END), 0)
+				FROM cash_entries WHERE purchase_id = ? AND status = 'CONFIRMED' FOR SHARE
+				""", BigDecimal.class, purchaseId);
+		BigDecimal current = paid == null ? BigDecimal.ZERO : paid;
+		BigDecimal after = current.add(delta);
+		if (after.signum() < 0 || (total != null && after.compareTo(total) > 0)) {
+			Map<String, Object> details = new LinkedHashMap<>();
+			details.put("purchaseAmount", total == null ? null : MoldFields.money(total));
+			details.put("paidAmount", MoldFields.money(current));
+			details.put("paidAmountAfter", MoldFields.money(after));
+			throw new MoldApiException(422, "OVER_PAYMENT",
+					after.signum() < 0 ? "操作后采购净付将为负数，请先处理相关退款" : "操作后采购净付将超过采购金额", details);
+		}
 	}
 
 	boolean canViewAll() {

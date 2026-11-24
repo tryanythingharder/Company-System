@@ -52,7 +52,7 @@
 						v-if="state === 'forbidden'"
 						kind="forbidden"
 						title="无我的工作权限"
-						description="当前账号没有 mold:project:list / mold:stage:mine 权限。服务端仍会对每个请求重新鉴权。"
+						description="当前账号没有查看本人工作的权限。如需使用，请联系老板开通。"
 						action-text="返回首页"
 						@action="goHome"
 					/>
