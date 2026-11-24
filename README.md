@@ -21,7 +21,22 @@ pig-ui/               前端
   src/views/mold/     业务页面：项目、阶段、流水、采购、更正
 docker-compose-spike.yml   本地依赖（MySQL / Redis）
 maven-settings.xml         Maven 镜像配置
+deploy/                    生产栈（MySQL / Redis / 后端 / nginx）与端到端测试脚本
+docs/                      生产就绪评估、交接文档
 ```
+
+## 生产部署与文档
+
+`deploy/` 下是一套可直接跑的生产栈，四个容器，只暴露 nginx：
+
+```bash
+./deploy/gen-secrets.sh                                    # 生成 deploy/.env（随机密钥，600 权限，不入库）
+docker compose -f deploy/docker-compose.prod.yml up -d --build
+```
+
+- 部署、发版、备份恢复、密钥轮换：`deploy/README.md`
+- 生产就绪评估、已整改与未整改清单：`docs/PRODUCTION_READINESS.md`
+- 接手先看（现状、代码约定、测试怎么跑、踩过的坑）：`docs/HANDOFF.md`
 
 ## 本地启动
 
